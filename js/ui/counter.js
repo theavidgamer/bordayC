@@ -45,22 +45,35 @@ export function renderCounter(root) {
     onChange: (v) => {
       if (!v) return;
       const g = ed.get();
+      // keep what was typed; the price goes back to the default price of the new order type
       draft.lines = { deals: g.deals, regular_qty: g.regular_qty, unit_price: unitPriceFor(v), containers: g.containers, empties_owed: {} };
       draft.fulfillment = v; draft.payNow = true; rerender();
     }
   });
   seg.el.classList.add('seg-big');
 
-  const totalAmt = h('div', { class: 'amt num' });
-  const totalSub = h('div', { class: 'muted' });
+  const totalBox = h('div', { class: 'total-box' });
   const changeBox = h('div', { class: 'change-box', hidden: true });
   const submit = h('button', { class: 'btn primary big block', type: 'button' });
   const errEl = h('p', { class: 'form-error', role: 'alert' }, draft.error);
 
+  const paintTotal = () => {
+    const tot = ed.total(), qn = ed.quantity(), rows = ed.breakdown();
+    clear(totalBox);
+    totalBox.append(h('div', { class: 'muted' }, 'Total'), h('div', { class: 'amt num' }, peso(tot)));
+    if (rows.some((r) => r.deal)) {
+      totalBox.append(h('table', { class: 'calc' },
+        h('thead', null, h('tr', null, h('th', null, 'Item'), h('th', { class: 'r' }, 'Qty'), h('th', { class: 'r' }, 'Price'), h('th', { class: 'r' }, 'Subtotal'))),
+        h('tbody', null, rows.map((r) => h('tr', null, h('td', null, r.name), h('td', { class: 'r num' }, String(r.qty)), h('td', { class: 'r num' }, peso(r.unit)), h('td', { class: 'r num' }, peso(r.subtotal)))))));
+      totalBox.append(h('div', { class: 'muted' }, `Total quantity: ${qn}`));
+    } else {
+      const r = rows[0];
+      totalBox.append(h('div', { class: 'muted' }, r ? `${r.qty} × ${peso(r.unit)} (${r.name})` : 'Nothing added yet'));
+    }
+  };
   const refresh = () => {
-    const tot = ed.total(), qn = ed.quantity();
-    totalAmt.textContent = peso(tot);
-    totalSub.textContent = `${qn} container${qn === 1 ? '' : 's'}`;
+    const tot = ed.total();
+    paintTotal();
     const t = toCentavos(draft.tendered);
     if (!delivery && draft.payNow && draft.method === 'cash' && draft.tendered.trim() && !Number.isNaN(t)) {
       changeBox.hidden = false;
@@ -70,6 +83,7 @@ export function renderCounter(root) {
     submit.textContent = delivery ? `Add delivery · ${peso(tot)}` : draft.payNow ? `Paid · ${peso(tot)}` : `Save as unpaid · ${peso(tot)}`;
   };
   const ed = linesEditor(editorInit, { fulfillment: draft.fulfillment, onChange: () => { draft.lines = ed.get(); refresh(); } });
+  draft.lines = ed.get();
 
   /* customer */
   const nameInput = h('input', { type: 'text', value: draft.customer, maxLength: 120, placeholder: delivery ? 'Customer name' : 'Name (optional)', autocomplete: 'off', 'aria-label': 'Customer name' });
@@ -95,13 +109,17 @@ export function renderCounter(root) {
 
   const rush = h('label', { class: 'row rush-toggle' }, h('input', { type: 'checkbox', checked: draft.priority, onchange: (e) => { draft.priority = e.target.checked; } }), h('span', null, '🔥 Rush – do this one first'));
 
-  const left = h('div', { class: 'card' }, h('h2', null, 'What are they buying?'), seg.el, ed.el,
-    field(delivery ? 'Customer *' : 'Customer', nameInput), suggest,
-    h('div', { class: 'field' }, h('span', { class: 'label' }, 'Handled by *'), sc.el), rush);
+  const box = (title, ...kids) => h('section', { class: 'card box' }, h('h2', null, title), ...kids);
+  const left = h('div', { class: 'stack' },
+    box('1 · Order', seg.el, field(delivery ? 'Customer *' : 'Customer', nameInput), suggest, h('div', { class: 'field' }, h('span', { class: 'label' }, 'Handled by *'), sc.el), rush),
+    box('2 · Quantity', ed.parts.quantity),
+    box('3 · Specials & price', ed.parts.deals),
+    box('4 · Container type', ed.parts.types),
+    delivery ? box('5 · Containers from the customer', ed.parts.swap) : null);
 
   /* payment + submit */
   const right = h('div', { class: 'stack sticky' });
-  right.append(h('div', { class: 'total-box' }, h('div', { class: 'muted' }, 'Total'), totalAmt, totalSub));
+  right.append(totalBox);
   const payCard = h('div', { class: 'card' });
   if (!delivery) {
     const pn = choice({ label: 'Payment', value: draft.payNow ? 'now' : 'later', options: [{ value: 'now', label: '💵 Paid now' }, { value: 'later', label: '📒 Pay later' }], onChange: (v) => { draft.payNow = v !== 'later'; rerender(); } });
@@ -116,7 +134,7 @@ export function renderCounter(root) {
         const t = h('input', { type: 'text', inputMode: 'decimal', value: draft.tendered, placeholder: 'Cash received (optional)', 'aria-label': 'Cash received' });
         t.addEventListener('input', () => { draft.tendered = t.value; refresh(); });
         const q = h('div', { class: 'suggest' }, [null, 50, 100, 200, 500, 1000].map((v) => h('button', { type: 'button', class: 'chip', onclick: () => { draft.tendered = pesoInput(v == null ? ed.total() : v * 100); t.value = draft.tendered; refresh(); } }, v == null ? 'Exact' : `₱${v}`)));
-        payCard.append(h('div', { class: 'field' }, t, q, changeBox));
+        payCard.append(h('div', { class: 'field' }, h('p', { class: 'hint', style: { marginTop: 0 } }, 'Type the cash received and the change will show here. You can skip this.'), t, q, changeBox));
       } else {
         const r = h('input', { type: 'text', value: draft.ref, placeholder: 'Reference no. (optional)', maxLength: 60 });
         r.addEventListener('input', () => { draft.ref = r.value; });
@@ -172,7 +190,7 @@ async function place(ed) {
   const now = new Date().toISOString();
   const order = O.createOrder({
     customer_name: name, customer_id: customerId, fulfillment: draft.fulfillment, staff: draft.staff,
-    deals: g.deals, regular_qty: g.regular_qty, unit_price: g.unit_price, containers: g.containers, empties_owed: g.empties_owed,
+    deals: g.deals, regular_qty: g.regular_qty, unit_price: g.unit_price, price_label: g.price_label, containers: g.containers, empties_owed: g.empties_owed,
     pay, note: draft.note, priority: draft.priority
   }, { id: newOrderId(s.deviceCode, day), orderNo, now, rates: rates() });
   await S.save({ orders: [order], customers: newCustomers, meta: { [`seq:${day}`]: seq } });

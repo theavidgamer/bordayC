@@ -1,6 +1,6 @@
 // The build script fills in the cache name and the file list automatically on every build,
 // so you never bump a version by hand: new build = new cache = phones update.
-const CACHE = 'ledger-0e9435805b';
+const CACHE = 'ledger-3ffb5f4800';
 const FILES = [
   "./",
   "./app.css",

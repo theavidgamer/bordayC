@@ -48,8 +48,8 @@ export function openCustomerQuick(name, id) {
   const body = h('div', { class: 'stack' },
     h('div', { class: 'list' },
       c.phone ? line('📞 Phone', c.phone) : null, c.address ? line('📍 Address', c.address) : null,
-      line('Orders', `${st.orders} · ${st.containers} containers`), line('Last order', st.last ? `${prettyDate(st.last)} (${st.sinceLast === 0 ? 'today' : st.sinceLast + ' d ago'})` : '—'),
-      line('Owes money', st.owedAmount ? peso(st.owedAmount) : 'No'), line('Empties out', st.outTotal ? String(st.outTotal) : 'None')),
+      line('Orders', `${st.orders} · quantity ${st.containers}`), line('Last order', st.last ? `${prettyDate(st.last)} (${st.sinceLast === 0 ? 'today' : st.sinceLast + ' d ago'})` : '—'),
+      line('Owes money', st.owedAmount ? peso(st.owedAmount) : 'No'), line('Containers out', st.outTotal ? String(st.outTotal) : 'None')),
     st.outTotal ? h('div', null, typeTags(st.out)) : null, c.note ? h('p', { class: 'hint' }, `📝 ${c.note}`) : null);
   const m = openModal({
     title: c.name, body, actions: [
@@ -93,7 +93,7 @@ export function renderCustomers(root) {
   root.append(h('div', { class: 'page-title' }, h('h1', null, 'Customers'), h('button', { class: 'btn primary', onclick: () => openEditModal(null, (c) => { profileId = c.customer_id; renderCustomers(root); }) }, '＋ Add customer')));
   const all = [...S.state.customers.values()];
   const rows = all.map((c) => ({ c, st: customerStats(c) }));
-  const filters = { all: 'All', owes: 'Owes money', empties: 'Empties out' };
+  const filters = { all: 'All', owes: 'Owes money', empties: 'Containers out' };
   let f = 'all';
   const search = h('input', { type: 'search', placeholder: '🔎 Find a customer or phone', value: q, 'aria-label': 'Find a customer' });
   const host = h('div', null);
@@ -110,8 +110,8 @@ export function renderCustomers(root) {
       h('td', { class: 'c-cust' }, h('strong', null, c.name), h('div', { class: 'muted small' }, [c.phone, c.address].filter(Boolean).join(' · ') || '')),
       h('td', { class: 'wide' }, `${st.orders} order${st.orders === 1 ? '' : 's'}`), h('td', { class: 'wide' }, st.last ? (st.sinceLast === 0 ? 'today' : `${st.sinceLast} d ago`) : '—'),
       h('td', null, st.owedAmount ? h('span', { class: 'tag warn' }, `Owes ${peso(st.owedAmount)}`) : h('span', { class: 'muted' }, '–')),
-      h('td', null, st.outTotal ? h('span', { class: 'tag warn' }, `⚠ ${st.outTotal} empties`) : h('span', { class: 'muted' }, '–')))));
-    host.append(h('div', { class: 'table-wrap book' }, h('table', { class: 'ledger' }, h('thead', null, h('tr', null, h('th', { class: 'c-cust' }, 'Customer'), h('th', { class: 'wide' }, 'Orders'), h('th', { class: 'wide' }, 'Last order'), h('th', null, 'Money owed'), h('th', null, 'Empties out'))), body)));
+      h('td', null, st.outTotal ? h('span', { class: 'tag warn' }, `⚠ ${st.outTotal} containers`) : h('span', { class: 'muted' }, '–')))));
+    host.append(h('div', { class: 'table-wrap book' }, h('table', { class: 'ledger' }, h('thead', null, h('tr', null, h('th', { class: 'c-cust' }, 'Customer'), h('th', { class: 'wide' }, 'Orders'), h('th', { class: 'wide' }, 'Last order'), h('th', null, 'Money owed'), h('th', null, 'Containers out'))), body)));
   }
   paint();
 }
@@ -127,9 +127,9 @@ function renderProfile(root, c) {
     h('p', { class: 'hint' }, 'Map pin and distance will be added later.')));
   const kpi = (k, v, sub) => h('div', { class: 'kpi' }, h('div', { class: 'k' }, k), h('div', { class: 'v num' }, v), sub ? h('div', { class: 'hint' }, sub) : null);
   root.append(h('div', { class: 'kpis stats', style: { marginTop: '.8rem' } },
-    kpi('Orders', String(st.orders), `${st.containers} containers`), kpi('Total paid', peso(st.spent)), kpi('Money owed', peso(st.owedAmount), st.owedCount ? `${st.owedCount} order(s)` : ''), kpi('Empties out', String(st.outTotal)),
+    kpi('Orders', String(st.orders), `quantity ${st.containers}`), kpi('Total paid', peso(st.spent)), kpi('Money owed', peso(st.owedAmount), st.owedCount ? `${st.owedCount} order(s)` : ''), kpi('Containers out', String(st.outTotal)),
     kpi('Last order', st.last ? (st.sinceLast === 0 ? 'Today' : `${st.sinceLast} d ago`) : '—', st.pred ? `Usually every ~${st.pred.typicalGapDays} days` : '')));
-  if (st.outTotal) root.append(h('p', null, 'Empties with this customer: ', typeTags(st.out)));
+  if (st.outTotal) root.append(h('p', null, 'Containers still with this customer: ', typeTags(st.out)));
   root.append(h('div', { class: 'section-h' }, h('span', null, 'Order history'), badge(String(st.mine.length))));
   if (!st.mine.length) root.append(emptyState('No orders yet', ''));
   else root.append(orderTable(st.mine.slice().reverse().map((o) => ({ n: null, order: o })), { showDate: true }));

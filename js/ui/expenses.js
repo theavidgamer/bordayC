@@ -103,7 +103,7 @@ export function renderExpenses(root) {
   const bal = R.staffBalances([...S.state.orders.values()], [...S.state.expenses.values()], s.staff.filter((x) => x.active !== false), tz, day);
   root.append(h('div', { class: 'grid two' }, bal.map((b) => h('div', { class: 'card' }, h('h2', null, b.name),
     h('div', { class: 'foot-grid' },
-      h('div', null, h('div', { class: 'k' }, 'Earned this day'), h('div', { class: 'v num' }, peso(b.earnedToday)), h('div', { class: 'hint' }, `${b.containersToday} containers`)),
+      h('div', null, h('div', { class: 'k' }, 'Earned this day'), h('div', { class: 'v num' }, peso(b.earnedToday)), h('div', { class: 'hint' }, `quantity ${b.containersToday}`)),
       h('div', null, h('div', { class: 'k' }, 'Incentive owed'), h('div', { class: 'v num' }, peso(b.balance))),
       h('div', null, h('div', { class: 'k' }, 'Advance balance'), h('div', { class: 'v num' }, peso(b.advanceBalance)))),
     h('div', { class: 'row', style: { marginTop: '.7rem' } },

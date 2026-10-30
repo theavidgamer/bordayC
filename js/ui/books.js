@@ -44,7 +44,7 @@ export function renderOverview(root) {
   root.append(h('div', { class: 'kpis', style: { marginTop: '.9rem' } },
     kpi('Revenue', peso(sum.revenue)), kpi('Expenses', peso(sum.expenses)),
     h('div', { class: 'kpi net' }, h('div', { class: 'k' }, 'Net profit'), h('div', { class: `v num ${sum.net < 0 ? 'neg' : 'pos'}` }, peso(sum.net))),
-    kpi('Orders', String(sum.orders)), kpi('Containers sold', String(sum.units)), kpi('Average order', peso(sum.avgOrder))));
+    kpi('Orders', String(sum.orders)), kpi('Quantity sold', String(sum.units)), kpi('Average order', peso(sum.avgOrder))));
 
   const labels = period === 'day' ? ser.map((r) => (Number(r.key) % 3 === 0 ? `${((Number(r.key) + 11) % 12) + 1}${Number(r.key) < 12 ? 'a' : 'p'}` : ''))
     : period === 'month' ? ser.map((r, i) => (i % 5 === 0 || i === ser.length - 1 ? String(Number(r.key.slice(8))) : ''))
@@ -113,9 +113,9 @@ function renderPage(root, day) {
     h('tbody', null, ex.map((e, i) => h('tr', null, h('td', { class: 'c-n' }, String(i + 1)), h('td', { class: 'c-cust' }, (e.kind && e.kind !== 'expense' ? `${staffName(e.staff)} · ${e.kind.replace(/_/g, ' ')}` : cats.get(e.category) || e.category) + (e.note ? ` – ${e.note}` : '')), h('td', { class: 'wide' }, e.paid_from === 'drawer' ? 'drawer' : 'owner'), h('td', { class: 'r c-amt num' }, peso(e.amount))))))));
   const line = (k, v) => h('div', { class: 'item' }, h('span', null, k), h('strong', { class: 'num' }, v));
   root.append(h('div', { class: 'grid two', style: { marginTop: '.9rem' } },
-    h('div', { class: 'card' }, h('h2', null, 'Totals'), h('div', { class: 'list' }, line('Containers', String(t.containers)), h('div', { class: 'item' }, h('span', null, 'By type'), typeTags(t.byType)), line('Sales taken', peso(t.salesTaken)), line('Collected (cash)', peso(t.collected.cash)),
+    h('div', { class: 'card' }, h('h2', null, 'Totals'), h('div', { class: 'list' }, line('Quantity', String(t.containers)), h('div', { class: 'item' }, h('span', null, 'By type'), typeTags(t.byType)), line('Sales taken', peso(t.salesTaken)), line('Collected (cash)', peso(t.collected.cash)),
       t.collected.gcash + t.collected.other ? line('Collected (GCash / other)', peso(t.collected.gcash + t.collected.other)) : null, line('Expenses', peso(t.costTotal)), t.incentivesPaid ? line('…of which incentives', peso(t.incentivesPaid)) : null, t.advancesGiven ? line('Advances given (not an expense)', peso(t.advancesGiven)) : null,
-      line('Net for the day', peso(t.net)), line('Still unpaid from this page', peso(t.unpaid)), line('Empties still out', String(t.emptiesOutTotal)))),
+      line('Net for the day', peso(t.net)), line('Still unpaid from this page', peso(t.unpaid)), line('Containers still out', String(t.emptiesOutTotal)))),
     h('div', { class: 'card' }, h('h2', null, 'Cash count'), t.close ? h('div', { class: 'list' }, line('Opening cash', peso(t.close.opening_float)), line('Expected', peso(t.close.expected_cash)), line('Counted', peso(t.close.counted_cash)), line('Difference', t.close.variance === 0 ? 'Balanced ✅' : `${t.close.variance > 0 ? 'Over' : 'Short'} ${peso(Math.abs(t.close.variance))}`), line('Left for next day', peso(t.close.float_next)), t.close.note ? line('Note', t.close.note) : null) : h('p', { class: 'muted' }, 'This day has not been closed. Use End Day in the Orders tab.'))));
 }
 

@@ -94,7 +94,7 @@ export function createOrder(input, ctx) {
     status: 'not_started', fulfillment, priority: !!input.priority,
     customer_name: name, customer_id: input.customer_id || null,
     staff: input.staff || null,
-    deals, regular_qty: regular, unit_price: unitPrice, quantity, total_price: total,
+    deals, regular_qty: regular, unit_price: unitPrice, price_label: input.price_label ? String(input.price_label).slice(0, 40) : null, quantity, total_price: total,
     containers, empties_owed: owed, empties_short: sumObj(owed), empties_history: [],
     incentive_rate: 0,
     payment_method: null, payment_ref: null, amount_tendered: null,
@@ -192,7 +192,7 @@ export function unvoidOrder(order, now) {
   return o;
 }
 
-const AMENDABLE = ['customer_name', 'customer_id', 'staff', 'deals', 'regular_qty', 'unit_price', 'quantity', 'total_price', 'containers', 'empties_owed', 'payment_method', 'payment_ref', 'note'];
+const AMENDABLE = ['price_label', 'customer_name', 'customer_id', 'staff', 'deals', 'regular_qty', 'unit_price', 'quantity', 'total_price', 'containers', 'empties_owed', 'payment_method', 'payment_ref', 'note'];
 
 /** Edit fields. Changes to anything already paid are written to `edits` (audit trail). total_price in the patch = manual override. */
 export function amendOrder(order, patch, now, reason = '') {

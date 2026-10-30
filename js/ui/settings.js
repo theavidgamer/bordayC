@@ -2,6 +2,7 @@
 import { h, clear } from './dom.js';
 import { toast, openModal, confirmModal, choice, field, stepper } from './components.js';
 import * as S from '../data/store.js';
+import { dealName } from '../data/store.js';
 import * as X from '../core/exchange.js';
 import * as O from '../core/orders.js';
 import { newSalt, hashPin } from '../core/pin.js';
@@ -23,7 +24,7 @@ export function renderSettings(root) {
 
   /* -------- prices */
   const pPick = money(s.pricePickup), pDel = money(s.priceDelivery), goal = money(s.dailyGoal, '0 = no goal');
-  stack.append(h('div', { class: 'card' }, h('h2', null, '💧 Prices'), h('p', { class: 'hint' }, 'Price for ONE container.'),
+  stack.append(h('div', { class: 'card' }, h('h2', null, '💧 Prices'), h('p', { class: 'hint' }, 'Price for ONE quantity (one refill).'),
     field('Pick-up price (₱)', pPick), field('Delivery price (₱)', pDel), field('Daily sales goal (₱, optional)', goal),
     h('div', { style: { marginTop: '.8rem' } }, h('button', { class: 'btn primary', onclick: async () => {
       const a = toCentavos(pPick.value), b = toCentavos(pDel.value), g = toCentavos(goal.value || '0');
@@ -32,13 +33,15 @@ export function renderSettings(root) {
     } }, 'Save prices'))));
 
   /* -------- special deals */
-  stack.append(listCard('⭐ Special deals', 'A fixed price for a set number of containers, e.g. 11 containers for ₱200. The Counter locks the price when a deal is used.', s.specials, (x) => `${x.name} · ${x.containers} containers for ${peso(x.total)}`, async (list) => saveSettings({ specials: list }), () => addSpecial()));
+  stack.append(listCard('⭐ Special deals', 'A fixed price for a set quantity, e.g. 11 for ₱200 (named “11 @ 200” automatically). The Counter locks the price when a deal is used.', s.specials, (x) => `${x.name} · quantity ${x.containers} for ${peso(x.total)}`, async (list) => saveSettings({ specials: list }), () => addSpecial()));
+
+  stack.append(listCard('🏷 Price presets', 'Other prices the Counter can pick quickly for both pick-up and delivery, e.g. Family ₱18. “Regular” is the price set above.', s.pricePresets, (x) => `${x.name} · ${peso(x.price)} each`, async (list) => saveSettings({ pricePresets: list }), () => addPreset()));
 
   /* -------- staff + incentive */
   stack.append(namedListCard('👥 Staff', s.staff, 'staff', true));
   const iPick = money(s.incentive.pickup), iDel = money(s.incentive.delivery);
-  stack.append(h('div', { class: 'card' }, h('h2', null, '🎁 Incentive per container'), h('p', { class: 'hint' }, 'Paid to the staff who handled the order, once it is served. ₱0 means no incentive. Changes apply to NEW orders only.'),
-    field('Pick-up (₱ per container)', iPick), field('Delivery (₱ per container)', iDel),
+  stack.append(h('div', { class: 'card' }, h('h2', null, '🎁 Incentive per quantity'), h('p', { class: 'hint' }, 'Paid to the staff who handled the order, once it is served. ₱0 means no incentive. Changes apply to NEW orders only.'),
+    field('Pick-up (₱ per quantity)', iPick), field('Delivery (₱ per quantity)', iDel),
     h('div', { style: { marginTop: '.8rem' } }, h('button', { class: 'btn primary', onclick: async () => {
       const a = toCentavos(iPick.value || '0'), b = toCentavos(iDel.value || '0');
       if ([a, b].some((x) => Number.isNaN(x) || x < 0)) return bad('Not a valid amount');
@@ -134,11 +137,26 @@ function listCard(title, hint, items, fmt, onSave, onAdd) {
   return card;
 }
 function addSpecial() {
-  const name = h('input', { type: 'text', maxLength: 40, placeholder: 'Name, e.g. Buy 10 get 1' });
-  const qty = stepper({ value: 11, min: 1, max: 99, size: 'sm', label: 'Containers' });
-  const total = h('input', { type: 'text', inputMode: 'decimal', placeholder: 'Total price (₱)' });
-  openModal({ title: 'New special deal', body: h('div', null, field('Name', name), h('div', { class: 'field' }, h('span', { class: 'label' }, 'Containers you get'), qty.el), field('Total price (₱)', total)),
-    actions: [{ label: 'Cancel' }, { label: 'Add', kind: 'primary', onClick: async ({ setError }) => { const t = toCentavos(total.value); if (!name.value.trim() || Number.isNaN(t) || t <= 0) { setError('Enter a name and a price.'); return false; } await saveSettings({ specials: [...S.state.settings.specials, { key: slug(name.value), name: name.value.trim(), containers: qty.get(), total: t }] }); } }] });
+  const qty = stepper({ value: 11, min: 1, max: 99, size: 'sm', label: 'Quantity' });
+  const total = h('input', { type: 'text', inputMode: 'decimal', placeholder: 'Total price (₱), e.g. 200' });
+  const name = h('input', { type: 'text', maxLength: 40, placeholder: 'Leave empty to name it “11 @ 200”' });
+  openModal({ title: 'New special deal', body: h('div', null, h('div', { class: 'field' }, h('span', { class: 'label' }, 'Quantity in one deal'), qty.el), field('Total price (₱)', total), field('Name (optional)', name)),
+    actions: [{ label: 'Cancel' }, { label: 'Add', kind: 'primary', onClick: async ({ setError }) => {
+      const t = toCentavos(total.value);
+      if (Number.isNaN(t) || t <= 0) { setError('Enter the total price.'); return false; }
+      const nm = name.value.trim() || dealName(qty.get(), t);
+      await saveSettings({ specials: [...S.state.settings.specials, { key: slug(nm), name: nm, containers: qty.get(), total: t }] });
+    } }] });
+}
+function addPreset() {
+  const name = h('input', { type: 'text', maxLength: 30, placeholder: 'e.g. Family' });
+  const price = h('input', { type: 'text', inputMode: 'decimal', placeholder: 'Price each (₱), e.g. 18' });
+  openModal({ title: 'New price preset', body: h('div', null, field('Name', name), field('Price each (₱)', price)),
+    actions: [{ label: 'Cancel' }, { label: 'Add', kind: 'primary', onClick: async ({ setError }) => {
+      const p = toCentavos(price.value);
+      if (!name.value.trim() || Number.isNaN(p) || p <= 0) { setError('Enter a name and a price.'); return false; }
+      await saveSettings({ pricePresets: [...S.state.settings.pricePresets, { key: slug(name.value), name: name.value.trim(), price: p }] });
+    } }] });
 }
 function namedListCard(title, items, field_, withActive = false) {
   const card = h('div', { class: 'card' }, h('h2', null, title));

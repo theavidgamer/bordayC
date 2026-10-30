@@ -52,7 +52,7 @@ export function sanitizeOrder(raw) {
       customer_name: str(raw.customer_name, 120).trim() || 'no name',
       customer_id: isSafeId(raw.customer_id) ? raw.customer_id : null,
       staff: raw.staff ? key(raw.staff) || null : null,
-      deals, regular_qty: regular, unit_price: unit, quantity, total_price: total,
+      deals, regular_qty: regular, unit_price: unit, price_label: raw.price_label ? str(raw.price_label, 40) : null, quantity, total_price: total,
       containers, empties_owed: fulfillment === 'delivery' ? countMap(raw.empties_owed) : {},
       empties_short: Math.max(0, int(raw.empties_short) || 0), empties_history: eh,
       incentive_rate: Math.max(0, int(raw.incentive_rate) || 0),

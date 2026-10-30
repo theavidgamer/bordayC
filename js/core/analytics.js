@@ -73,7 +73,7 @@ export function riderStats(orders, { riders = [], lateMinutes = 45, minSample = 
       if (level !== 'poor') level = 'watch';
       reasons.push(`Late ${pct(row.lateRate)} vs ${pct(otherLate)} for the other rider${others.length > 1 ? 's' : ''}.`);
     }
-    if (row.owedRate >= 0.3) { level = level === 'good' ? 'watch' : level; reasons.push(`Empties not collected on ${pct(row.owedRate)} of deliveries.`); }
+    if (row.owedRate >= 0.3) { level = level === 'good' ? 'watch' : level; reasons.push(`Containers not collected on ${pct(row.owedRate)} of deliveries.`); }
     if (!reasons.length) reasons.push('On target.');
     row.level = level; row.reasons = reasons;
     return row;
@@ -174,10 +174,10 @@ export function buildInsights({ riders = [], reorders = [], receivables = [], co
   const owed = receivables.reduce((s, g) => s + g.amount, 0);
   if (owed > 0) cards.push({ level: 'warn', title: `${receivables.length} customer${receivables.length === 1 ? '' : 's'} still owe money`, detail: `Oldest balance is ${Math.max(...receivables.map((g) => g.oldestDays))} day(s) old.`, amount: owed });
   const outN = containers.reduce((s, g) => s + g.out, 0);
-  if (outN > 0) cards.push({ level: 'info', title: `${outN} empty container${outN === 1 ? '' : 's'} still out`, detail: `With ${containers.length} customer${containers.length === 1 ? '' : 's'}.` });
+  if (outN > 0) cards.push({ level: 'info', title: `${outN} container${outN === 1 ? '' : 's'} still out`, detail: `With ${containers.length} customer${containers.length === 1 ? '' : 's'}.` });
   if (forecast) {
     const best = [...forecast].sort((a, b) => b.expected - a.expected)[0];
-    if (best && best.expected > 0) cards.push({ level: 'good', title: `Busiest coming day: ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][best.weekday]}`, detail: `About ${best.expected} container${best.expected === 1 ? '' : 's'} expected.` });
+    if (best && best.expected > 0) cards.push({ level: 'good', title: `Busiest coming day: ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][best.weekday]}`, detail: `About ${best.expected} quantity expected.` });
   }
   return cards;
 }

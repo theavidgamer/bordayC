@@ -13,8 +13,8 @@ import { staffName, typeTags, lineSummary, timerTag, emptiesCell, fulfillLabel }
 export function orderTable(rows, { interactive = true, showDate = false, now = Date.now() } = {}) {
   const tz = S.state.settings.timezone;
   const head = h('thead', null, h('tr', null,
-    h('th', { class: 'c-n' }, 'No.'), h('th', { class: 'c-cust' }, 'Customer'), h('th', { class: 'wide' }, 'Containers'), h('th', { class: 'wide' }, 'Handled by'),
-    h('th', { class: 'wide' }, 'Empties'), h('th', { class: 'wide' }, 'Status / time'), h('th', { class: 'r c-amt' }, 'Amount'), interactive ? h('th', { class: 'c-act' }, '') : null));
+    h('th', { class: 'c-n' }, 'No.'), h('th', { class: 'c-cust' }, 'Customer'), h('th', { class: 'wide' }, 'Qty'), h('th', { class: 'wide' }, 'Handled by'),
+    h('th', { class: 'wide' }, 'Containers'), h('th', { class: 'wide' }, 'Status / time'), h('th', { class: 'r c-amt' }, 'Amount'), interactive ? h('th', { class: 'c-act' }, '') : null));
   const body = h('tbody', null);
   for (const { n, order: o, carried } of rows) {
     const st = T.stage(o, now, tz, S.state.settings.timers);
@@ -24,7 +24,7 @@ export function orderTable(rows, { interactive = true, showDate = false, now = D
     const nameBtn = h('button', { class: 'linklike name', type: 'button', onclick: (e) => { e.stopPropagation(); hooks.openCustomer(o.customer_name, o.customer_id); } }, o.customer_name);
     const sub = h('div', { class: 'sub narrow' },
       h('span', null, `${o.quantity}× `), typeTags(o.containers), ' ', h('span', { class: 'muted' }, `· ${staffName(o.staff)} · ${fulfillLabel(o.fulfillment)}`),
-      o.fulfillment === 'delivery' && O.sumObj(o.empties_owed) ? h('span', { class: 'tag warn' }, `⚠ ${O.sumObj(o.empties_owed)} empties out`) : null,
+      o.fulfillment === 'delivery' && O.sumObj(o.empties_owed) ? h('span', { class: 'tag warn' }, `⚠ ${O.sumObj(o.empties_owed)} containers out`) : null,
       h('div', null, o.voided_at ? h('span', { class: 'time none' }, 'Voided') : timerTag(o, now)));
     const tr = h('tr', { class: cls, tabIndex: interactive ? 0 : -1, onclick: interactive ? () => hooks.openOrder(o) : null,
       onkeydown: interactive ? (e) => { if (e.key === 'Enter' && e.target === tr) hooks.openOrder(o); } : null },

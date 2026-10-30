@@ -21,7 +21,7 @@ export async function persist(order, okMsg) {
 /** Short label for the one big button on a row. null = nothing left to do. */
 export function nextAction(o) {
   if (o.voided_at || o.status === 'cancelled') return null;
-  if (O.owesContainers(o) && o.status === 'paid') return { id: 'empties', label: '🫙 Empties' };
+  if (O.owesContainers(o) && o.status === 'paid') return { id: 'empties', label: '🫙 Containers' };
   const next = O.nextStatus(o);
   if (!next) return null;
   return { id: next, label: { preparing: '👨‍🍳 Start', otw: '🛵 Out', delivered: '📦 Delivered', paid: '💵 Collect' }[next] || 'Next' };
@@ -77,13 +77,13 @@ export function openPayModal(order) {
 export function openEmptiesModal(order) {
   const steps = {};
   const rows = Object.entries(order.empties_owed).filter(([, n]) => n > 0).map(([k, n]) => {
-    const sp = stepper({ value: n, min: 0, max: n, size: 'sm', label: `${typeInfo(k).name} empties returned` });
+    const sp = stepper({ value: n, min: 0, max: n, size: 'sm', label: `${typeInfo(k).name} containers returned` });
     steps[k] = sp;
     return h('div', { class: 'row', style: { marginTop: '.5rem' } }, h('span', { class: 'type-label' }, `${typeInfo(k).icon} ${typeInfo(k).name} (still out: ${n})`), sp.el);
   });
   openModal({
-    title: 'Empties came back',
-    body: h('div', null, h('p', null, `${order.customer_name} still has ${O.sumObj(order.empties_owed)} empty container(s).`), h('p', { class: 'hint' }, 'How many did they give back now?'), ...rows),
+    title: 'Containers came back',
+    body: h('div', null, h('p', null, `${order.customer_name} still has ${O.sumObj(order.empties_owed)} of our container(s).`), h('p', { class: 'hint' }, 'How many did they give back now?'), ...rows),
     actions: [{ label: 'Cancel' }, { label: 'Save', kind: 'primary', onClick: async ({ setError }) => {
       try { const ret = Object.fromEntries(Object.entries(steps).map(([k, sp]) => [k, sp.get()])); return await persist(O.returnEmpties(order, ret, nowIso()), 'Saved'); } catch (e) { setError(e.message); return false; }
     } }]
@@ -171,8 +171,8 @@ export function openOrderWindow(orderIn) {
     h('div', { class: 'row between' }, h('button', { class: 'linklike', onclick: () => { m.close(); hooks.openCustomer(order.customer_name, order.customer_id); } }, `👤 ${order.customer_name}`), h('strong', { class: 'num', style: { fontSize: '1.4rem' } }, peso(order.total_price))),
     h('div', { class: 'list', style: { marginTop: '.4rem' } },
       detail('Type', `${fulfillLabel(order.fulfillment)}${order.priority ? ' · 🔥 RUSH' : ''}`), detail('Handled by', staffName(order.staff)),
-      detail('Order', lineSummary(order) || '–'), detail('Containers', typeTags(order.containers)),
-      order.fulfillment === 'delivery' ? detail('Empties', O.sumObj(order.empties_owed) ? h('span', null, 'Still out: ', typeTags(order.empties_owed)) : (order.empties_short ? 'All back' : 'Swapped')) : null,
+      detail('Order', lineSummary(order) || '–'), detail('Quantity', h('span', null, `${order.quantity} `, typeTags(order.containers))),
+      order.fulfillment === 'delivery' ? detail('Containers', O.sumObj(order.empties_owed) ? h('span', null, 'Still out: ', typeTags(order.empties_owed)) : (order.empties_short ? 'All back' : 'Swapped')) : null,
       order.payment_method ? detail('Paid by', `${O.METHOD_LABEL[order.payment_method]}${order.payment_ref ? ' · ' + order.payment_ref : ''}`) : null,
       order.note ? detail('Note', order.note) : null),
     h('h3', { style: { margin: '.9rem 0 .2rem' } }, 'Times'),
@@ -181,7 +181,7 @@ export function openOrderWindow(orderIn) {
     h('div', { style: { marginTop: '.8rem' } },
       act ? btn(`${act.label}${act.id === 'paid' ? ' · ' + peso(order.total_price) : ''}`, () => doNext(order), 'primary') : null,
       !order.voided_at && order.status !== 'cancelled' && !['paid'].includes(order.status) ? btn(order.priority ? '🔥 Remove RUSH' : '🔥 Mark as RUSH (put on top)', () => toggleRush(order)) : null,
-      !order.voided_at && O.owesContainers(order) && act?.id !== 'empties' ? btn('🫙 Empties came back', () => openEmptiesModal(order)) : null,
+      !order.voided_at && O.owesContainers(order) && act?.id !== 'empties' ? btn('🫙 Containers came back', () => openEmptiesModal(order)) : null,
       !order.voided_at ? btn('✏️ Edit order', () => openAmendModal(order)) : null,
       order.status === 'paid' && !order.voided_at ? btn('↩️ Mark as not paid', () => openUnpayModal(order)) : null,
       order.status === 'cancelled' ? btn('♻️ Re-open order', () => persist(O.setStatus(order, 'not_started', nowIso()), 'Re-opened')) : null,

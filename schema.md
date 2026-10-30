@@ -60,7 +60,8 @@ All money is **integer centavos** (₱25.00 = 2500). All times are ISO-8601 UTC.
 | `customer_name`, `customer_id` | string, string \| null | `no name` for anonymous walk-ins |
 | `staff` | string \| null | Key in file-level `staff` map. Who handled the order (pick-ups too). |
 | `deals` | `[{key,name,containers,total,count}]` | Special deals used; `total` = fixed price per deal (centavos) |
-| `regular_qty`, `unit_price` | int | Regular containers and price each (₱20 pick-up / ₱25 delivery by default) |
+| `regular_qty`, `unit_price` | int | Regular quantity and price each (₱20 pick-up / ₱25 delivery by default) |
+| `price_label` | string \| null | `Regular`, a preset name (e.g. `Family`), or `Modified` |
 | `quantity` | int | = `regular_qty` + Σ `count × containers` |
 | `total_price` | int | = `regular_qty × unit_price` + Σ `count × total` (unless amended manually; see `edits`) |
 | `containers` | `{type: n}` | Per container type; sums to `quantity` |

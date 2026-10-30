@@ -45,6 +45,24 @@ export function openEndDay(day) {
   const expensesWithPayouts = () => [...expenses, ...payoutRecords(new Date().toISOString())];
   const calc = () => R.expectedCash(orders, expensesWithPayouts(), tz, day, opening);
   const countedFromDenoms = () => BILLS.reduce((a, b) => a + (denoms[`b${b}`] || 0) * b * 100, 0) + COINS.reduce((a, c) => a + (denoms[`c${c}`] || 0) * c * 100, 0);
+  /** Every cash movement of the day, so the review shows WHY the expected cash is what it is. */
+  const cashParts = () => {
+    const live = R.liveExpenses(expensesWithPayouts()).filter((e) => e.date === day);
+    const sumOf = (f) => live.filter(f).reduce((a, e) => a + e.amount, 0);
+    const k = (e) => e.kind || 'expense';
+    return {
+      expenses: sumOf((e) => k(e) === 'expense' && e.paid_from === 'drawer'), incentives: sumOf((e) => k(e) === 'incentive_payout' && e.paid_from === 'drawer'),
+      advances: sumOf((e) => k(e) === 'advance' && e.paid_from === 'drawer'), repaid: sumOf((e) => k(e) === 'advance_repayment' && e.paid_from === 'drawer'),
+      ownerPaid: sumOf((e) => k(e) === 'expense' && e.paid_from !== 'drawer'),
+      expenseCount: live.filter((e) => k(e) === 'expense' && e.paid_from === 'drawer').length
+    };
+  };
+  const cashRows = (c) => { const p = cashParts(); return [
+    row('Cash in the drawer at opening', peso(c.openingFloat)), row('+ Cash collected today', peso(c.cashSales)),
+    row(`− Expenses paid from the drawer${p.expenseCount ? ` (${p.expenseCount})` : ''}`, peso(p.expenses)), row('− Incentives paid to staff', peso(p.incentives)),
+    p.advances ? row('− Advances given to staff', peso(p.advances)) : null, p.repaid ? row('+ Advances paid back', peso(p.repaid)) : null,
+    row('= Expected cash in the drawer', peso(c.expected)),
+    p.ownerPaid ? h('p', { class: 'hint' }, `Not counted above: ${peso(p.ownerPaid)} of expenses paid by the owner (not from the drawer).`) : null ]; };
   const counted = () => (typedTotal != null ? typedTotal : countedFromDenoms());
   const nav = (back, next, nextLabel) => h('div', { class: 'modal-actions', style: { padding: '1rem 0 0', border: 0 } },
     back ? h('button', { class: 'btn', onclick: back }, '← Back') : h('button', { class: 'btn', onclick: modal.close }, 'Cancel'), next);
@@ -58,8 +76,8 @@ export function openEndDay(day) {
         h('div', { class: 'list', style: { marginTop: '.7rem' } },
           row('Orders on this page', String(totals.count)), row('Cash collected', peso(totals.collected.cash)),
           s.acceptOtherPayments || totals.collected.gcash + totals.collected.other > 0 ? row('GCash / other collected', peso(totals.collected.gcash + totals.collected.other)) : null,
-          row('Expenses paid today', peso(totals.costTotal)), row('Unfinished orders (stay on the page)', String(unfinished.length)),
-          row('Customers who owe money', `${owed.length} · ${peso(owed.reduce((a, g) => a + g.amount, 0))}`), row('Empties still out', String(totals.emptiesOutTotal))),
+          row('Expenses paid today', peso(totals.costTotal)), row('…of which from the drawer', peso(cashParts().expenses)), row('Unfinished orders (stay on the page)', String(unfinished.length)),
+          row('Customers who owe money', `${owed.length} · ${peso(owed.reduce((a, g) => a + g.amount, 0))}`), row('Containers still out', String(totals.emptiesOutTotal))),
         unfinished.length ? h('p', { class: 'hint' }, 'Unfinished orders are not lost – they stay at the top of tomorrow’s page.') : null,
         nav(null, h('button', { class: 'btn primary', onclick: () => { step = 2; paint(); } }, 'Next: staff incentives →')));
     } else if (step === 2) {
@@ -79,7 +97,8 @@ export function openEndDay(day) {
       const floatIn = h('input', { type: 'text', inputMode: 'decimal', value: pesoInput(floatNext != null ? floatNext : opening), 'aria-label': 'Cash to leave for tomorrow' });
       const refresh = () => {
         const c = calc(), cnt = counted(), v = cnt - c.expected;
-        expLine.textContent = `Expected in drawer: ${peso(c.expected)}  (opening ${peso(c.openingFloat)} + cash collected ${peso(c.cashSales)} − cash paid out ${peso(c.drawerExpenses)})`;
+        const p = cashParts();
+        expLine.textContent = `Expected in drawer: ${peso(c.expected)}  (opening ${peso(c.openingFloat)} + cash collected ${peso(c.cashSales)} − expenses ${peso(p.expenses)} − incentives ${peso(p.incentives)}${p.advances ? ` − advances ${peso(p.advances)}` : ''}${p.repaid ? ` + paid back ${peso(p.repaid)}` : ''})`;
         clear(totalLine); totalLine.append(h('div', { class: 'muted' }, 'Counted'), h('div', { class: 'amt num' }, peso(cnt)));
         varBox.textContent = v === 0 ? '✅ Balanced' : v > 0 ? `Over by ${peso(v)}` : `Short by ${peso(-v)}`;
         varBox.classList.toggle('short', v < 0);
@@ -101,8 +120,9 @@ export function openEndDay(day) {
       const err = h('p', { class: 'form-error', role: 'alert' });
       const go = h('button', { class: 'btn primary big', onclick: async () => { go.disabled = true; err.textContent = ''; try { await finish(); } catch (e) { err.textContent = e.message; go.disabled = false; } } }, '💾 Save day & send file');
       const pay = payouts.filter((p) => p.include && p.amount > 0);
-      box.append(h('div', { class: 'list' }, row('Sales taken', peso(totals.salesTaken)), row('Collected', peso(totals.collectedTotal)), row('Incentives paid', peso(pay.reduce((a, p) => a + p.amount, 0))),
-        row('Expected cash', peso(c.expected)), row('Counted cash', peso(cnt)), row('Difference', v === 0 ? 'Balanced ✅' : (v > 0 ? 'Over ' : 'Short ') + peso(Math.abs(v))), row('Left for tomorrow', peso(floatNext != null ? floatNext : opening))),
+      box.append(h('div', { class: 'list' }, row('Sales taken', peso(totals.salesTaken)), row('Collected', peso(totals.collectedTotal)), row('Expenses today (all)', peso(totals.costTotal + pay.reduce((a, p) => a + p.amount, 0)))),
+        h('h3', { style: { margin: '.9rem 0 .3rem' } }, 'Cash in the drawer'), h('div', { class: 'list' }, ...cashRows(c).filter(Boolean)),
+        h('div', { class: 'list', style: { marginTop: '.6rem' } }, row('Counted cash', peso(cnt)), row('Difference', v === 0 ? 'Balanced ✅' : (v > 0 ? 'Over ' : 'Short ') + peso(Math.abs(v))), row('Left for tomorrow', peso(floatNext != null ? floatNext : opening))),
         h('p', { class: 'hint' }, 'Next, your device will offer to share the day’s file. Send it to email, Drive or Discord so it is safe even if this device is lost.'), err,
         nav(() => { step = 3; paint(); }, go));
     }

@@ -46,11 +46,11 @@ export function renderOrders(root) {
   const toDeliver = open.filter((o) => ['not_started', 'preparing', 'otw'].includes(o.status)).length;
   const stat = (k, v, sub, cls = '') => h('div', { class: `kpi ${cls}` }, h('div', { class: 'k' }, k), h('div', { class: 'v num' }, v), sub ? h('div', { class: 'hint' }, sub) : null);
   root.append(h('div', { class: 'kpis stats' },
-    stat('Sales taken', peso(t.salesTaken), `${t.count} order${t.count === 1 ? '' : 's'} · ${t.containers} containers`),
+    stat('Sales taken', peso(t.salesTaken), `${t.count} order${t.count === 1 ? '' : 's'} · quantity ${t.containers}`),
     stat('Collected', peso(t.collectedTotal), t.collected.gcash ? `Cash ${peso(t.collected.cash)} · GCash ${peso(t.collected.gcash)}` : 'Money received'),
     stat('To deliver now', String(toDeliver), null, toDeliver ? 'attn' : ''),
     stat('Money owed', peso(owed.reduce((a, g) => a + g.amount, 0)), `${owed.length} customer${owed.length === 1 ? '' : 's'}`),
-    stat('Empties out', String(R.containersOwed(all, today, tz).reduce((a, g) => a + g.out, 0)), 'with customers')));
+    stat('Containers out', String(R.containersOwed(all, today, tz).reduce((a, g) => a + g.out, 0)), 'with customers')));
 
   /* filters */
   const f = choice({ label: 'Show', value: filter, options: [{ value: 'all', label: 'All' }, { value: 'open', label: 'Unfinished' }, { value: 'done', label: 'Done' }], onChange: (v) => { filter = v || 'all'; renderOrders(root); } });
@@ -94,11 +94,11 @@ export function renderOrders(root) {
   function footer(totals) {
     return h('div', { class: 'card page-foot' },
       h('div', { class: 'foot-grid' },
-        h('div', null, h('div', { class: 'k' }, 'Containers'), h('div', { class: 'v' }, String(totals.containers)), typeTags(totals.byType)),
+        h('div', null, h('div', { class: 'k' }, 'Quantity'), h('div', { class: 'v' }, String(totals.containers)), typeTags(totals.byType)),
         h('div', null, h('div', { class: 'k' }, 'Sales taken'), h('div', { class: 'v num' }, peso(totals.salesTaken))),
         h('div', null, h('div', { class: 'k' }, 'Collected'), h('div', { class: 'v num' }, peso(totals.collectedTotal))),
         h('div', null, h('div', { class: 'k' }, 'Unpaid'), h('div', { class: 'v num' }, peso(totals.unpaid))),
-        h('div', null, h('div', { class: 'k' }, 'Empties still out'), h('div', { class: 'v' }, String(totals.emptiesOutTotal)), typeTags(totals.emptiesOut))),
+        h('div', null, h('div', { class: 'k' }, 'Containers still out'), h('div', { class: 'v' }, String(totals.emptiesOutTotal)), typeTags(totals.emptiesOut))),
       h('p', { class: 'hint' }, '“Sales taken” is the total of orders taken on this page (like the notebook total). “Collected” is money actually received on this day, including payments for earlier orders.'));
   }
 

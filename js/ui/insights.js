@@ -34,7 +34,7 @@ export function renderInsights(root) {
   const rc = h('div', { class: 'card' }, h('h2', null, 'Delivery performance by staff'), h('p', { class: 'hint' }, `Time from order to delivered. “Late” means over ${lateMinutes} minutes (change the timers in ⚙️ Settings). A rider is only judged after 10 deliveries.`));
   if (!riders.length) rc.append(h('p', { class: 'muted' }, 'No completed deliveries yet.'));
   else rc.append(h('div', { class: 'table-wrap' }, h('table', null,
-    h('thead', null, h('tr', null, ['Staff', 'Deliveries', 'Typical time', 'Late', 'Empties missed', 'Verdict'].map((x, i) => h('th', { class: i > 0 && i < 5 ? 'r' : '' }, x)))),
+    h('thead', null, h('tr', null, ['Staff', 'Deliveries', 'Typical time', 'Late', 'Containers not taken', 'Verdict'].map((x, i) => h('th', { class: i > 0 && i < 5 ? 'r' : '' }, x)))),
     h('tbody', null, riders.map((r) => h('tr', null,
       h('td', null, h('strong', null, r.name)), h('td', { class: 'r num' }, String(r.deliveries)),
       h('td', { class: 'r num' }, r.medianMinutes == null ? '–' : `${Math.round(r.medianMinutes)} min`),
@@ -60,7 +60,7 @@ export function renderInsights(root) {
   const fc = h('div', { class: 'card' }, h('h2', null, 'Expected demand (next 7 days)'));
   if (!forecast) fc.append(h('p', { class: 'muted' }, 'Needs about 2 weeks of orders to estimate.'));
   else {
-    fc.append(barChart({ data: forecast.map((d) => ({ label: dayName(d.date), value: d.expected })), title: 'Expected containers per day', format: (n) => String(n), height: 150 }));
+    fc.append(barChart({ data: forecast.map((d) => ({ label: dayName(d.date), value: d.expected })), title: 'Expected quantity per day', format: (n) => String(n), height: 150 }));
     fc.append(h('p', { class: 'hint' }, 'Average of the same weekday over the last 8 weeks. Use it to plan refill stock and rider shifts.'));
   }
   stack.append(fc);

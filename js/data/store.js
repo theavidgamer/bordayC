@@ -4,7 +4,7 @@ import * as db from './db.js';
 import { dateKey } from '../core/dates.js';
 import { sanitizeDeviceCode } from '../core/ids.js';
 
-export const APP_VERSION = '4.0.0';
+export const APP_VERSION = '4.1.0';
 
 export const DEFAULT_SETTINGS = Object.freeze({
   stationName: 'Water Station',
@@ -13,7 +13,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   deviceName: '',
   pricePickup: 2000,
   priceDelivery: 2500,
-  specials: [],            // [{key, name, containers, total}]  e.g. Buy 10 get 1: 11 containers, ₱200
+  specials: [],            // [{key, name, containers(=quantity per deal), total}]  e.g. name "11 @ 200": 11 quantity for ₱200
+  pricePresets: [{ key: 'family', name: 'Family', price: 1800 }], // alternative price per quantity, shown at the Counter for pick-up and delivery
   staff: [{ key: 'staff_a', name: 'Staff A', active: true }, { key: 'staff_b', name: 'Staff B', active: true }],
   containerTypes: [{ key: 'bilog', name: 'Bilog', short: 'R', icon: '⭕' }, { key: 'faucet', name: 'Faucet', short: 'S', icon: '⬛' }],
   defaultContainerType: 'bilog',
@@ -46,10 +47,31 @@ const notify = () => listeners.forEach((fn) => { try { fn(); } catch (e) { conso
 let channel = null;
 function ping() { try { channel?.postMessage({ t: Date.now() }); } catch { /* ignore */ } }
 
+/** Default name of a deal, e.g. "11 @ 200" (quantity @ total pesos). */
+export const dealName = (containers, totalCentavos) => `${containers} @ ${totalCentavos % 100 ? (totalCentavos / 100).toFixed(2) : totalCentavos / 100}`;
+/** Older saved settings used `qty` instead of `containers`, and some had no name. Repair them instead of breaking the Counter. */
+export function cleanSpecials(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const d of list) {
+    const containers = Math.round(Number(d?.containers ?? d?.qty));
+    const total = Math.round(Number(d?.total));
+    if (!(containers >= 1) || !(total >= 0)) continue;
+    out.push({ key: String(d.key || `deal_${containers}_${total}`), name: String(d.name || '').trim() || dealName(containers, total), containers, total });
+  }
+  return out;
+}
+function cleanPresets(list) {
+  if (!Array.isArray(list)) return DEFAULT_SETTINGS.pricePresets.map((x) => ({ ...x }));
+  return list.map((p) => ({ key: String(p?.key || ''), name: String(p?.name || '').trim(), price: Math.round(Number(p?.price)) })).filter((p) => p.key && p.name && p.price >= 0);
+}
+
 function mergeSettings(saved) {
   const base = { ...DEFAULT_SETTINGS, ...(saved && typeof saved === 'object' ? saved : {}) };
   base.incentive = { ...DEFAULT_SETTINGS.incentive, ...(base.incentive || {}) };
   base.timers = { ...DEFAULT_SETTINGS.timers, ...(base.timers || {}) };
+  base.specials = cleanSpecials(base.specials);
+  base.pricePresets = cleanPresets(base.pricePresets);
   return base;
 }
 
