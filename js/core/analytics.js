@@ -31,8 +31,8 @@ export function riderStats(orders, { riders = [], lateMinutes = 45, minSample = 
   const ensure = (k) => { if (!byRider.has(k)) byRider.set(k, { key: k, name: label.get(k) || k, totals: [], transits: [], owed: 0, cancelled: 0, weeks: new Map() }); return byRider.get(k); };
 
   for (const o of orders) {
-    if (o.voided_at || o.fulfillment !== 'delivery' || !o.rider) continue;
-    const r = ensure(o.rider);
+    if (o.voided_at || o.fulfillment !== 'delivery' || !o.staff) continue;
+    const r = ensure(o.staff);
     if (o.status === 'cancelled') { r.cancelled++; continue; }
     if (!o.delivered_at) continue;
     const total = minutesBetween(o.created_at, o.delivered_at);
@@ -40,7 +40,7 @@ export function riderStats(orders, { riders = [], lateMinutes = 45, minSample = 
     r.totals.push(total);
     const otw = lastOtwAt(o);
     if (otw) { const t = minutesBetween(otw, o.delivered_at); if (t >= 0) r.transits.push(t); }
-    if (o.container_status === 'owed') r.owed++;
+    if ((o.empties_short || 0) > 0) r.owed++;
     const wk = mondayOf(o.delivered_at.slice(0, 10));
     const w = r.weeks.get(wk) || { n: 0, late: 0 };
     w.n++; if (total > lateMinutes) w.late++;

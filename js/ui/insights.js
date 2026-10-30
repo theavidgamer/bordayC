@@ -16,7 +16,8 @@ export function renderInsights(root) {
   clear(root);
   const s = S.state.settings, tz = s.timezone, today = S.today();
   const all = orders();
-  const riders = A.riderStats(all, { riders: s.riders, lateMinutes: s.lateMinutes });
+  const lateMinutes = s.timers.preparingLate + s.timers.outLate;
+  const riders = A.riderStats(all, { riders: s.staff, lateMinutes });
   const reorders = A.reorderPredictions(all, today, tz, { customers: S.state.customers });
   const recv = R.receivables(all, today, tz);
   const boxes = R.containersOwed(all, today, tz);
@@ -30,10 +31,10 @@ export function renderInsights(root) {
   stack.append(h('div', { class: 'stack' }, cards.length ? cards.map((c) => h('div', { class: `insight ${c.level}` }, h('div', { class: 't' }, c.title), h('div', { class: 'hint' }, c.detail), c.amount ? h('strong', { class: 'num' }, peso(c.amount)) : null)) : h('div', { class: 'insight good' }, h('div', { class: 't' }, 'Nothing needs attention right now ✅'))));
 
   /* riders */
-  const rc = h('div', { class: 'card' }, h('h2', null, 'Rider performance'), h('p', { class: 'hint' }, `Time from order to delivered. “Late” means over ${s.lateMinutes} minutes (change in More → Settings). A rider is only judged after 10 deliveries.`));
+  const rc = h('div', { class: 'card' }, h('h2', null, 'Delivery performance by staff'), h('p', { class: 'hint' }, `Time from order to delivered. “Late” means over ${lateMinutes} minutes (change the timers in ⚙️ Settings). A rider is only judged after 10 deliveries.`));
   if (!riders.length) rc.append(h('p', { class: 'muted' }, 'No completed deliveries yet.'));
   else rc.append(h('div', { class: 'table-wrap' }, h('table', null,
-    h('thead', null, h('tr', null, ['Rider', 'Deliveries', 'Typical time', 'Late', 'Empties missed', 'Verdict'].map((x, i) => h('th', { class: i > 0 && i < 5 ? 'r' : '' }, x)))),
+    h('thead', null, h('tr', null, ['Staff', 'Deliveries', 'Typical time', 'Late', 'Empties missed', 'Verdict'].map((x, i) => h('th', { class: i > 0 && i < 5 ? 'r' : '' }, x)))),
     h('tbody', null, riders.map((r) => h('tr', null,
       h('td', null, h('strong', null, r.name)), h('td', { class: 'r num' }, String(r.deliveries)),
       h('td', { class: 'r num' }, r.medianMinutes == null ? '–' : `${Math.round(r.medianMinutes)} min`),

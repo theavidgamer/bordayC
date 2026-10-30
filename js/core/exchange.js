@@ -1,51 +1,61 @@
 // Import / export. Everything that comes from a file is treated as untrusted and re-validated.
-import { STATUSES, CONTAINER_STATUSES, PAYMENT_METHODS, METHOD_LABEL } from './orders.js';
+import { STATUSES, PAYMENT_METHODS, METHOD_LABEL, computeTotals, sumObj, STATUS_LABEL } from './orders.js';
+import { EXPENSE_KINDS } from './reports.js';
 import { isSafeId } from './ids.js';
 import { dateKey, prettyTime } from './dates.js';
 import { pesoPlain } from './money.js';
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 export const APP_NAME = 'water-station-ledger';
 
 const isoOrNull = (v) => { if (v == null || v === '') return null; const d = new Date(v); return Number.isNaN(d.getTime()) ? undefined : d.toISOString(); };
 const str = (v, max) => String(v ?? '').slice(0, max);
 const int = (v) => (Number.isInteger(v) ? v : Number.isFinite(v) ? Math.round(v) : NaN);
 
+const key = (v, max = 40) => str(v, max).replace(/[^A-Za-z0-9_-]/g, '');
+const countMap = (raw) => {
+  const out = {};
+  if (raw && typeof raw === 'object') for (const [k, v] of Object.entries(raw).slice(0, 12)) { const kk = key(k); const n = int(v); if (kk && n >= 0 && n <= 99999) out[kk] = n; }
+  return out;
+};
+
 /** Returns { ok:true, order } or { ok:false, error }. Unknown fields are dropped. */
 export function sanitizeOrder(raw) {
   if (!raw || typeof raw !== 'object') return { ok: false, error: 'not an object' };
   if (!isSafeId(raw.order_id)) return { ok: false, error: 'bad order_id' };
+  const id = raw.order_id;
   const created = isoOrNull(raw.created_at);
-  if (!created) return { ok: false, error: `${raw.order_id}: bad created_at` };
+  if (!created) return { ok: false, error: `${id}: bad created_at` };
   const updated = isoOrNull(raw.updated_at) || created;
-  if (!STATUSES.includes(raw.status)) return { ok: false, error: `${raw.order_id}: bad status` };
-  const quantity = int(raw.quantity), unit = int(raw.unit_price), total = int(raw.total_price);
-  if (!(quantity >= 1 && quantity <= 99999) || !(unit >= 0) || !(total >= 0)) return { ok: false, error: `${raw.order_id}: bad quantity/price` };
+  if (!STATUSES.includes(raw.status)) return { ok: false, error: `${id}: bad status` };
   const dates = {};
-  for (const k of ['delivered_at', 'paid_at', 'voided_at']) { const v = isoOrNull(raw[k]); if (v === undefined) return { ok: false, error: `${raw.order_id}: bad ${k}` }; dates[k] = v; }
-  const ctype = raw.container_type ? str(raw.container_type, 40).replace(/[^A-Za-z0-9_-]/g, '') || null : null;
+  for (const k of ['delivered_at', 'paid_at', 'voided_at']) { const v = isoOrNull(raw[k]); if (v === undefined) return { ok: false, error: `${id}: bad ${k}` }; dates[k] = v; }
+  const deals = (Array.isArray(raw.deals) ? raw.deals : []).slice(0, 20).map((d) => ({ key: key(d?.key) || 'deal', name: str(d?.name, 60) || 'Special', containers: int(d?.containers), total: int(d?.total), count: int(d?.count) }));
+  if (deals.some((d) => !(d.containers >= 1) || !(d.total >= 0) || !(d.count >= 1))) return { ok: false, error: `${id}: bad deal` };
+  const regular = int(raw.regular_qty ?? 0), unit = int(raw.unit_price), total = int(raw.total_price);
+  if (!(regular >= 0) || !(unit >= 0) || !(total >= 0)) return { ok: false, error: `${id}: bad quantity/price` };
+  const t = computeTotals({ deals, regular_qty: regular, unit_price: unit });
+  const quantity = int(raw.quantity);
+  if (quantity !== t.quantity || !(quantity >= 1)) return { ok: false, error: `${id}: quantity does not match its lines` };
+  const containers = countMap(raw.containers);
+  if (sumObj(containers) !== quantity) return { ok: false, error: `${id}: container types do not add up` };
   const hist = Array.isArray(raw.status_history) ? raw.status_history.filter((h) => h && STATUSES.includes(h.status) && isoOrNull(h.at)).slice(0, 50).map((h) => ({ status: h.status, at: new Date(h.at).toISOString() })) : [];
   const edits = Array.isArray(raw.edits) ? raw.edits.slice(0, 100).map((e) => ({ at: isoOrNull(e?.at) || updated, changes: JSON.parse(JSON.stringify(e?.changes ?? {}).slice(0, 4000) || '{}'), reason: str(e?.reason, 200) })) : [];
-  const chist = Array.isArray(raw.container_history) ? raw.container_history.slice(0, 100).filter((c) => c && Number.isInteger(c.returned) && isoOrNull(c.at)).map((c) => ({ returned: c.returned, at: new Date(c.at).toISOString() })) : [];
+  const eh = Array.isArray(raw.empties_history) ? raw.empties_history.slice(0, 100).filter((c) => c && isoOrNull(c.at)).map((c) => ({ returned: countMap(c.returned), at: new Date(c.at).toISOString() })) : [];
+  const fulfillment = raw.fulfillment === 'delivery' ? 'delivery' : 'pickup';
   return {
     ok: true,
     order: {
-      order_id: raw.order_id,
-      order_no: raw.order_no ? str(raw.order_no, 20) : null,
+      order_id: id, order_no: raw.order_no ? str(raw.order_no, 20) : null,
       created_at: created, updated_at: updated, ...dates,
-      status: raw.status,
-      fulfillment: raw.fulfillment === 'delivery' ? 'delivery' : 'walkin',
+      status: raw.status, fulfillment, priority: !!raw.priority,
       customer_name: str(raw.customer_name, 120).trim() || 'no name',
       customer_id: isSafeId(raw.customer_id) ? raw.customer_id : null,
-      is_special: !!raw.is_special,
-      special_name: raw.special_name ? str(raw.special_name, 80) : null,
-      quantity, unit_price: unit, total_price: total,
-      rider: raw.rider ? str(raw.rider, 40).replace(/[^A-Za-z0-9_-]/g, '') || null : null,
-      container_type: ctype,
-      container_status: ctype && CONTAINER_STATUSES.includes(raw.container_status) ? raw.container_status : null,
-      container_count: ctype ? Math.max(0, int(raw.container_count) || 0) : 0,
-      container_out_count: ctype ? Math.max(0, int(raw.container_out_count) || 0) : 0,
-      container_history: chist,
+      staff: raw.staff ? key(raw.staff) || null : null,
+      deals, regular_qty: regular, unit_price: unit, quantity, total_price: total,
+      containers, empties_owed: fulfillment === 'delivery' ? countMap(raw.empties_owed) : {},
+      empties_short: Math.max(0, int(raw.empties_short) || 0), empties_history: eh,
+      incentive_rate: Math.max(0, int(raw.incentive_rate) || 0),
       payment_method: PAYMENT_METHODS.includes(raw.payment_method) ? raw.payment_method : null,
       payment_ref: raw.payment_ref ? str(raw.payment_ref, 60) : null,
       amount_tendered: Number.isInteger(raw.amount_tendered) ? raw.amount_tendered : null,
@@ -64,13 +74,13 @@ export function sanitizeExpense(raw) {
   if (!(amount >= 0)) return { ok: false, error: `${raw.expense_id}: bad amount` };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(raw.date))) return { ok: false, error: `${raw.expense_id}: bad date` };
   const created = isoOrNull(raw.created_at) || new Date().toISOString();
+  const kind = EXPENSE_KINDS.includes(raw.kind) ? raw.kind : 'expense';
   return {
     ok: true,
     expense: {
-      expense_id: raw.expense_id, date: raw.date, amount,
-      category: str(raw.category, 40).replace(/[^A-Za-z0-9_-]/g, '') || 'other',
-      note: str(raw.note, 200),
-      paid_from: raw.paid_from === 'drawer' ? 'drawer' : 'owner',
+      expense_id: raw.expense_id, kind, date: raw.date, amount,
+      category: key(raw.category) || 'other', staff: raw.staff ? key(raw.staff) || null : null,
+      note: str(raw.note, 200), paid_from: ['drawer', 'salary'].includes(raw.paid_from) ? raw.paid_from : 'owner',
       created_at: created, updated_at: isoOrNull(raw.updated_at) || created, voided_at: isoOrNull(raw.voided_at) || null
     }
   };
@@ -79,7 +89,7 @@ export function sanitizeExpense(raw) {
 export function sanitizeCustomer(raw) {
   if (!raw || !isSafeId(raw.customer_id)) return null;
   const created = isoOrNull(raw.created_at) || new Date().toISOString();
-  return { customer_id: raw.customer_id, name: str(raw.name, 120).trim() || 'no name', phone: str(raw.phone, 40), address: str(raw.address, 200), note: str(raw.note, 300), created_at: created, updated_at: isoOrNull(raw.updated_at) || created };
+  return { customer_id: raw.customer_id, name: str(raw.name, 120).trim() || 'no name', phone: str(raw.phone, 40), address: str(raw.address, 200), note: str(raw.note, 300), lat: Number.isFinite(raw.lat) ? raw.lat : null, lng: Number.isFinite(raw.lng) ? raw.lng : null, created_at: created, updated_at: isoOrNull(raw.updated_at) || created };
 }
 
 export function sanitizeClose(raw) {
@@ -103,7 +113,7 @@ export function fileHeader(settings, exportType, now, extra = {}) {
     currency: 'PHP', money_unit: 'centavo', timezone: settings.timezone,
     device: settings.deviceCode,
     container_types: Object.fromEntries((settings.containerTypes || []).map((c) => [c.key, c.name])),
-    riders: Object.fromEntries((settings.riders || []).map((r) => [r.key, r.name]))
+    staff: Object.fromEntries((settings.staff || []).map((r) => [r.key, r.name]))
   };
 }
 
@@ -137,8 +147,8 @@ export function parseFile(text) {
   if (!data || typeof data !== 'object' || !['orders', 'app_backup'].includes(data.export_type)) {
     return { kind: 'invalid', errors: ['This file was not made by this app.'] };
   }
-  if (!(data.schema_version >= 3 && data.schema_version <= SCHEMA_VERSION)) {
-    return { kind: 'invalid', errors: [`Unsupported file version (${data.schema_version}).`] };
+  if (data.schema_version !== SCHEMA_VERSION) {
+    return { kind: 'invalid', errors: [`This file is version ${data.schema_version}; this app reads version ${SCHEMA_VERSION}.`] };
   }
   const errors = [];
   const orders = [], expenses = [], customers = [], closes = [];
@@ -167,16 +177,17 @@ export function parseFile(text) {
 const guard = (v) => { const s = String(v ?? ''); return /^[=+\-@\t\r]/.test(s) ? `'${s}` : s; }; // spreadsheet formula injection
 const cell = (v) => { const s = guard(v); return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
 
-export function salesCsv(orders, settings) {
+export function ordersCsv(orders, settings) {
   const tz = settings.timezone;
-  const riderName = new Map((settings.riders || []).map((r) => [r.key, r.name]));
-  const head = ['Date paid', 'Time paid', 'Order no', 'Customer', 'Qty', 'Unit price', 'Total', 'Payment', 'Type', 'Rider', 'Empties still out', 'Note'];
+  const staff = new Map((settings.staff || []).map((r) => [r.key, r.name]));
+  const types = settings.containerTypes || [];
+  const head = ['Date taken', 'Time', 'No.', 'Customer', 'Type', 'Handled by', 'Containers', ...types.map((t) => t.name), 'Total (PHP)', 'Payment', 'Status', 'Date paid', 'Empties still out', 'Note'];
   const lines = [head.map(cell).join(',')];
-  for (const o of [...orders].sort((a, b) => new Date(a.paid_at) - new Date(b.paid_at))) {
+  for (const o of [...orders].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))) {
     lines.push([
-      dateKey(o.paid_at, tz), prettyTime(o.paid_at, tz), o.order_no || o.order_id, o.customer_name, o.quantity,
-      pesoPlain(o.unit_price), pesoPlain(o.total_price), METHOD_LABEL[o.payment_method || 'cash'],
-      o.fulfillment === 'delivery' ? 'Delivery' : 'Walk-in', riderName.get(o.rider) || o.rider || '', o.container_out_count || 0, o.note
+      dateKey(o.created_at, tz), prettyTime(o.created_at, tz), o.order_no || o.order_id, o.customer_name, o.fulfillment === 'delivery' ? 'Delivery' : 'Pick-up',
+      staff.get(o.staff) || o.staff || '', o.quantity, ...types.map((t) => o.containers?.[t.key] || 0), pesoPlain(o.total_price),
+      o.payment_method ? METHOD_LABEL[o.payment_method] : '', o.voided_at ? 'Voided' : STATUS_LABEL[o.status], o.paid_at ? dateKey(o.paid_at, tz) : '', sumObj(o.empties_owed), o.note
     ].map(cell).join(','));
   }
   return '﻿' + lines.join('\r\n');
@@ -184,9 +195,11 @@ export function salesCsv(orders, settings) {
 
 export function expensesCsv(expenses, settings) {
   const cats = new Map((settings.expenseCategories || []).map((c) => [c.key, c.name]));
-  const lines = [['Date', 'Category', 'Amount', 'Paid from', 'Note'].map(cell).join(',')];
+  const staff = new Map((settings.staff || []).map((r) => [r.key, r.name]));
+  const KIND = { expense: 'Expense', incentive_payout: 'Incentive payout', advance: 'Advance', advance_repayment: 'Advance repaid' };
+  const lines = [['Date', 'Type', 'Category', 'Staff', 'Amount (PHP)', 'From', 'Note'].map(cell).join(',')];
   for (const e of [...expenses].filter((x) => !x.voided_at).sort((a, b) => a.date.localeCompare(b.date))) {
-    lines.push([e.date, cats.get(e.category) || e.category, pesoPlain(e.amount), e.paid_from === 'drawer' ? 'Cash drawer' : 'Owner', e.note].map(cell).join(','));
+    lines.push([e.date, KIND[e.kind || 'expense'], cats.get(e.category) || e.category, staff.get(e.staff) || '', pesoPlain(e.amount), { drawer: 'Cash drawer', owner: 'Owner', salary: 'Salary' }[e.paid_from] || '', e.note].map(cell).join(','));
   }
   return '﻿' + lines.join('\r\n');
 }

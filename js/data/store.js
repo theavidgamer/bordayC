@@ -4,28 +4,31 @@ import * as db from './db.js';
 import { dateKey } from '../core/dates.js';
 import { sanitizeDeviceCode } from '../core/ids.js';
 
-export const APP_VERSION = '3.0.0';
+export const APP_VERSION = '4.0.0';
 
 export const DEFAULT_SETTINGS = Object.freeze({
   stationName: 'Water Station',
   timezone: 'Asia/Manila',
   deviceCode: 'D',
   deviceName: '',
-  unitPrice: 2000,
-  specials: [],
-  riders: [{ key: 'rider_a', name: 'Rider A', active: true }, { key: 'rider_b', name: 'Rider B', active: true }],
-  containerTypes: [{ key: 'bilog', name: 'Bilog' }, { key: 'faucet', name: 'Faucet' }],
+  pricePickup: 2000,
+  priceDelivery: 2500,
+  specials: [],            // [{key, name, containers, total}]  e.g. Buy 10 get 1: 11 containers, ₱200
+  staff: [{ key: 'staff_a', name: 'Staff A', active: true }, { key: 'staff_b', name: 'Staff B', active: true }],
+  containerTypes: [{ key: 'bilog', name: 'Bilog', short: 'R', icon: '⭕' }, { key: 'faucet', name: 'Faucet', short: 'S', icon: '⬛' }],
   defaultContainerType: 'bilog',
+  incentive: { pickup: 0, delivery: 0 },   // centavos per container, owner sets
+  timers: { waitingWarn: 5, waitingLate: 10, preparingWarn: 10, preparingLate: 20, outWarn: 20, outLate: 40, unpaidWarnHours: 24, unpaidLateHours: 72 },
   expenseCategories: [
-    { key: 'refill_source', name: 'Water / refill source' }, { key: 'supplies', name: 'Supplies' }, { key: 'electricity', name: 'Electricity' },
-    { key: 'salaries', name: 'Salaries' }, { key: 'fuel', name: 'Fuel / transport' }, { key: 'repairs', name: 'Repairs' }, { key: 'other', name: 'Other' }
+    { key: 'refill_source', name: 'Water / refill source' }, { key: 'supplies', name: 'Supplies & food' }, { key: 'load', name: 'Load / phone' },
+    { key: 'electricity', name: 'Electricity' }, { key: 'fuel', name: 'Fuel / transport' }, { key: 'repairs', name: 'Repairs' }, { key: 'other', name: 'Other' }
   ],
-  lateMinutes: 45,
   dailyGoal: 0,
   acceptOtherPayments: false,
   openingFloat: 0,
   textScale: 1,
   booksPin: null,
+  riderPayLocked: false,
   discordWebhook: '',
   onboarded: false
 });
@@ -43,6 +46,13 @@ const notify = () => listeners.forEach((fn) => { try { fn(); } catch (e) { conso
 let channel = null;
 function ping() { try { channel?.postMessage({ t: Date.now() }); } catch { /* ignore */ } }
 
+function mergeSettings(saved) {
+  const base = { ...DEFAULT_SETTINGS, ...(saved && typeof saved === 'object' ? saved : {}) };
+  base.incentive = { ...DEFAULT_SETTINGS.incentive, ...(base.incentive || {}) };
+  base.timers = { ...DEFAULT_SETTINGS.timers, ...(base.timers || {}) };
+  return base;
+}
+
 async function loadAll() {
   const [orders, expenses, customers, closes, meta] = await Promise.all(['orders', 'expenses', 'customers', 'closes', 'meta'].map(db.getAll));
   state.orders = new Map(orders.map((o) => [o.order_id, o]));
@@ -51,7 +61,7 @@ async function loadAll() {
   state.closes = new Map(closes.map((o) => [o.close_id, o]));
   state.meta = Object.fromEntries(meta.map((m) => [m.key, m.value]));
   const saved = state.meta.settings;
-  state.settings = { ...DEFAULT_SETTINGS, ...(saved && typeof saved === 'object' ? saved : {}) };
+  state.settings = mergeSettings(saved);
   state.settings.deviceCode = sanitizeDeviceCode(state.settings.deviceCode);
 }
 
@@ -68,11 +78,12 @@ export async function init() {
 }
 
 /** One call = one atomic transaction across stores. Memory changes only after success. */
-export async function save({ orders = [], expenses = [], customers = [], closes = [], meta = {}, settings = null } = {}) {
+export async function save({ orders = [], expenses = [], customers = [], closes = [], meta = {}, settings = null, deleteCustomers = [] } = {}) {
   const metaRows = Object.entries(meta).map(([key, value]) => ({ key, value }));
   let nextSettings = null;
-  if (settings) { nextSettings = { ...state.settings, ...settings }; metaRows.push({ key: 'settings', value: nextSettings }); }
-  await db.commit({ orders, expenses, customers, closes, meta: metaRows });
+  if (settings) { nextSettings = mergeSettings({ ...state.settings, ...settings }); metaRows.push({ key: 'settings', value: nextSettings }); }
+  await db.commit({ orders, expenses, customers, closes, meta: metaRows, deleteKeys: deleteCustomers.length ? { customers: deleteCustomers } : undefined });
+  for (const id of deleteCustomers) state.customers.delete(id);
   for (const o of orders) state.orders.set(o.order_id, o);
   for (const e of expenses) state.expenses.set(e.expense_id, e);
   for (const c of customers) state.customers.set(c.customer_id, c);

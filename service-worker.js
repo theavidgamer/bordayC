@@ -1,6 +1,6 @@
 // The build script fills in the cache name and the file list automatically on every build,
 // so you never bump a version by hand: new build = new cache = phones update.
-const CACHE = 'ledger-6adddf5d49';
+const CACHE = 'ledger-0e9435805b';
 const FILES = [
   "./",
   "./app.css",
@@ -17,19 +17,27 @@ const FILES = [
   "./js/core/orders.js",
   "./js/core/pin.js",
   "./js/core/reports.js",
+  "./js/core/timers.js",
   "./js/data/db.js",
   "./js/data/store.js",
   "./js/main.js",
   "./js/ui/actions.js",
-  "./js/ui/board.js",
   "./js/ui/books.js",
+  "./js/ui/bus.js",
   "./js/ui/components.js",
   "./js/ui/counter.js",
+  "./js/ui/customers.js",
   "./js/ui/dom.js",
+  "./js/ui/endday.js",
+  "./js/ui/expenses.js",
   "./js/ui/files.js",
   "./js/ui/insights.js",
+  "./js/ui/lines.js",
+  "./js/ui/lock.js",
+  "./js/ui/orderTable.js",
+  "./js/ui/orders.js",
   "./js/ui/settings.js",
-  "./js/ui/today.js",
+  "./js/ui/view.js",
   "./manifest.json"
 ];
 

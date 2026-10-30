@@ -1,4 +1,4 @@
-// More: settings, backup / restore, import (merge devices), safety tools.
+// Settings: prices, deals, staff, timers, backup, backup / restore, import (merge devices), safety tools.
 import { h, clear } from './dom.js';
 import { toast, openModal, confirmModal, choice, field, stepper } from './components.js';
 import * as S from '../data/store.js';
@@ -7,41 +7,75 @@ import * as O from '../core/orders.js';
 import { newSalt, hashPin } from '../core/pin.js';
 import { sanitizeDeviceCode } from '../core/ids.js';
 import { peso, toCentavos, pesoInput } from '../core/money.js';
+import { lockNow } from './lock.js';
 import { deliverFile, readTextFile, isDiscordWebhook, postToDiscord } from './files.js';
 
 const slug = (name) => `${String(name).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 24) || 'item'}_${Math.random().toString(36).slice(2, 6)}`;
 const saveSettings = async (patch, msg = 'Saved') => { try { await S.save({ settings: patch }); toast(msg, { kind: 'ok', ms: 2000 }); } catch (e) { toast(e.message, { kind: 'error' }); } };
 
-export function renderMore(root, { lockBooks }) {
+export function renderSettings(root) {
   clear(root);
   const s = S.state.settings;
-  root.append(h('div', { class: 'page-title' }, h('h1', null, 'More'), h('span', { class: 'muted' }, `v${S.APP_VERSION} · ${s.stationName}`)));
+  root.append(h('div', { class: 'page-title' }, h('h1', null, '⚙️ Settings'), h('span', { class: 'muted' }, `v${S.APP_VERSION} · ${s.stationName}`)));
   const stack = h('div', { class: 'stack' });
+  const money = (v, ph = '0') => h('input', { type: 'text', inputMode: 'decimal', value: pesoInput(v), placeholder: ph });
+  const bad = (m) => toast(m, { kind: 'error' });
 
-  /* -------- shop basics */
-  const name = h('input', { type: 'text', value: s.stationName, maxLength: 60 });
-  const price = h('input', { type: 'text', inputMode: 'decimal', value: pesoInput(s.unitPrice) });
-  const goal = h('input', { type: 'text', inputMode: 'decimal', value: pesoInput(s.dailyGoal), placeholder: '0 = no goal' });
-  const late = stepper({ value: s.lateMinutes, min: 5, max: 240, size: 'sm', label: 'Late after minutes' });
-  const tz = h('input', { type: 'text', value: s.timezone });
+  /* -------- prices */
+  const pPick = money(s.pricePickup), pDel = money(s.priceDelivery), goal = money(s.dailyGoal, '0 = no goal');
+  stack.append(h('div', { class: 'card' }, h('h2', null, '💧 Prices'), h('p', { class: 'hint' }, 'Price for ONE container.'),
+    field('Pick-up price (₱)', pPick), field('Delivery price (₱)', pDel), field('Daily sales goal (₱, optional)', goal),
+    h('div', { style: { marginTop: '.8rem' } }, h('button', { class: 'btn primary', onclick: async () => {
+      const a = toCentavos(pPick.value), b = toCentavos(pDel.value), g = toCentavos(goal.value || '0');
+      if ([a, b, g].some((x) => Number.isNaN(x) || x < 0)) return bad('One of the prices is not valid');
+      await saveSettings({ pricePickup: a, priceDelivery: b, dailyGoal: g }, 'Prices saved');
+    } }, 'Save prices'))));
+
+  /* -------- special deals */
+  stack.append(listCard('⭐ Special deals', 'A fixed price for a set number of containers, e.g. 11 containers for ₱200. The Counter locks the price when a deal is used.', s.specials, (x) => `${x.name} · ${x.containers} containers for ${peso(x.total)}`, async (list) => saveSettings({ specials: list }), () => addSpecial()));
+
+  /* -------- staff + incentive */
+  stack.append(namedListCard('👥 Staff', s.staff, 'staff', true));
+  const iPick = money(s.incentive.pickup), iDel = money(s.incentive.delivery);
+  stack.append(h('div', { class: 'card' }, h('h2', null, '🎁 Incentive per container'), h('p', { class: 'hint' }, 'Paid to the staff who handled the order, once it is served. ₱0 means no incentive. Changes apply to NEW orders only.'),
+    field('Pick-up (₱ per container)', iPick), field('Delivery (₱ per container)', iDel),
+    h('div', { style: { marginTop: '.8rem' } }, h('button', { class: 'btn primary', onclick: async () => {
+      const a = toCentavos(iPick.value || '0'), b = toCentavos(iDel.value || '0');
+      if ([a, b].some((x) => Number.isNaN(x) || x < 0)) return bad('Not a valid amount');
+      await saveSettings({ incentive: { pickup: a, delivery: b } }, 'Incentive saved');
+    } }, 'Save incentive'))));
+
+  /* -------- timers */
+  const T = s.timers;
+  const tw = (label, key, max, unit) => ({ key, label, unit, st: stepper({ value: T[key], min: 1, max, size: 'sm', label }) });
+  const rows = [['Waiting (not started)', tw('Amber after', 'waitingWarn', 240, 'min'), tw('Red after', 'waitingLate', 240, 'min')], ['Preparing', tw('Amber after', 'preparingWarn', 240, 'min'), tw('Red after', 'preparingLate', 240, 'min')],
+    ['Rider out', tw('Amber after', 'outWarn', 480, 'min'), tw('Red after', 'outLate', 480, 'min')], ['Unpaid (utang)', tw('Amber after', 'unpaidWarnHours', 999, 'hours'), tw('Red after', 'unpaidLateHours', 999, 'hours')]];
+  stack.append(h('div', { class: 'card' }, h('h2', null, '⏱ Timers'), h('p', { class: 'hint' }, 'When an order stays too long in a stage, its time turns amber, then red.'),
+    ...rows.map(([name, a, b]) => h('div', { class: 'field' }, h('span', { class: 'label' }, name), h('div', { class: 'row' }, h('span', null, `Amber after (${a.unit})`), a.st.el, h('span', null, `Red after (${b.unit})`), b.st.el))),
+    h('div', { style: { marginTop: '.8rem' } }, h('button', { class: 'btn primary', onclick: async () => {
+      const t = {}; for (const [, a, b] of rows) { t[a.key] = a.st.get(); t[b.key] = b.st.get(); }
+      for (const [, a, b] of rows) if (t[b.key] < t[a.key]) return bad('“Red” must be later than “Amber”.');
+      await saveSettings({ timers: t }, 'Timers saved');
+    } }, 'Save timers'))));
+
+  /* -------- containers + categories */
+  stack.append(namedListCard('🫙 Container types', s.containerTypes, 'containerTypes'));
+  stack.append(namedListCard('🧾 Expense categories', s.expenseCategories, 'expenseCategories'));
+
+  /* -------- shop, display, payments */
+  const name = h('input', { type: 'text', value: s.stationName, maxLength: 60 }), tz = h('input', { type: 'text', value: s.timezone });
   const textSize = choice({ label: 'Text size', value: String(s.textScale), options: [{ value: '1', label: 'Normal' }, { value: '1.15', label: 'Large' }, { value: '1.3', label: 'Extra large' }], onChange: (v) => v && saveSettings({ textScale: Number(v) }, 'Text size changed') });
   const other = choice({ label: 'GCash', value: s.acceptOtherPayments ? 'on' : 'off', options: [{ value: 'off', label: 'Cash only' }, { value: 'on', label: 'Also GCash / other' }], onChange: (v) => v && saveSettings({ acceptOtherPayments: v === 'on' }) });
-  stack.append(h('div', { class: 'card' }, h('h2', null, 'Shop'), field('Shop name', name), field('Price per container (₱)', price), field('Daily sales goal (₱, optional)', goal),
-    h('div', { class: 'field' }, h('span', { class: 'label' }, 'Delivery is “late” after (minutes)'), late.el), h('div', { class: 'field' }, h('span', { class: 'label' }, 'Text size'), textSize.el), h('div', { class: 'field' }, h('span', { class: 'label' }, 'Payment types'), other.el),
+  const opening = money(s.openingFloat);
+  stack.append(h('div', { class: 'card' }, h('h2', null, '🏪 Shop & display'), field('Shop name', name), field('Cash kept in the drawer at opening (₱)', opening, 'Used when End Day checks the cash. End Day also remembers what you leave for tomorrow.'),
+    h('div', { class: 'field' }, h('span', { class: 'label' }, 'Text size'), textSize.el), h('div', { class: 'field' }, h('span', { class: 'label' }, 'Payment types'), other.el),
     field('Timezone', tz, 'Example: Asia/Manila. All daily totals follow this timezone.'),
     h('div', { style: { marginTop: '.8rem' } }, h('button', { class: 'btn primary', onclick: async () => {
-      const p = toCentavos(price.value), g = toCentavos(goal.value || '0');
-      if (Number.isNaN(p) || p < 0) return toast('Price is not valid', { kind: 'error' });
-      if (Number.isNaN(g) || g < 0) return toast('Goal is not valid', { kind: 'error' });
-      try { new Intl.DateTimeFormat('en', { timeZone: tz.value.trim() }); } catch { return toast('Unknown timezone', { kind: 'error' }); }
-      await saveSettings({ stationName: name.value.trim() || 'Water Station', unitPrice: p, dailyGoal: g, lateMinutes: late.get(), timezone: tz.value.trim() });
-    } }, 'Save shop settings'))));
-
-  /* -------- lists */
-  stack.append(listCard('Special deals', 'e.g. “Buy 5 get 1” = 6 containers for ₱100', s.specials, ['name', 'qty', 'total'], (x) => `${x.name} · ${x.qty} for ${peso(x.total)}`, async (list) => saveSettings({ specials: list }), () => addSpecial(s)));
-  stack.append(namedListCard('Riders', s.riders, 'riders', true));
-  stack.append(namedListCard('Container types', s.containerTypes, 'containerTypes'));
-  stack.append(namedListCard('Expense categories', s.expenseCategories, 'expenseCategories'));
+      const o = toCentavos(opening.value || '0');
+      if (Number.isNaN(o) || o < 0) return bad('Opening cash is not valid');
+      try { new Intl.DateTimeFormat('en', { timeZone: tz.value.trim() }); } catch { return bad('Unknown timezone'); }
+      await saveSettings({ stationName: name.value.trim() || 'Water Station', openingFloat: o, timezone: tz.value.trim() });
+    } }, 'Save'))));
 
   /* -------- device + pin */
   const dev = h('input', { type: 'text', value: s.deviceName, maxLength: 30, placeholder: 'e.g. Tablet' });
@@ -50,11 +84,13 @@ export function renderMore(root, { lockBooks }) {
     field('Name', dev), field('Code (1–3 letters, different on every device)', code),
     h('div', { style: { marginTop: '.8rem' } }, h('button', { class: 'btn', onclick: () => saveSettings({ deviceName: dev.value.trim(), deviceCode: sanitizeDeviceCode(code.value) }) }, 'Save'))));
 
-  const pinCard = h('div', { class: 'card' }, h('h2', null, 'Books lock (PIN)'), h('p', { class: 'hint' }, 'Keeps cashiers out of profit and reports. It is a simple lock, not bank-level security.'));
+  const pinCard = h('div', { class: 'card' }, h('h2', null, '🔒 PIN lock'), h('p', { class: 'hint' }, 'Keeps other cashiers out of Books (and Rider pay, if you turn that on). It is a simple lock, not bank-level security.'));
   pinCard.append(h('div', { class: 'row', style: { marginTop: '.6rem' } },
-    h('button', { class: 'btn', onclick: () => setPin() }, s.booksPin ? 'Change PIN' : 'Set a PIN'),
-    s.booksPin ? h('button', { class: 'btn', onclick: () => confirmModal({ title: 'Remove the PIN?', message: 'Anyone using this device will be able to open Books.', okLabel: 'Remove PIN', kind: 'danger', onConfirm: async () => { await saveSettings({ booksPin: null }, 'PIN removed'); renderMore(root, { lockBooks }); } }) }, 'Remove PIN') : null,
-    s.booksPin ? h('button', { class: 'btn', onclick: lockBooks }, '🔒 Lock Books now') : null));
+    h('button', { class: 'btn', onclick: () => setPin(root) }, s.booksPin ? 'Change PIN' : 'Set a PIN'),
+    s.booksPin ? h('button', { class: 'btn', onclick: () => confirmModal({ title: 'Remove the PIN?', message: 'Anyone using this device will be able to open Books and Rider pay.', okLabel: 'Remove PIN', kind: 'danger', onConfirm: async () => { await saveSettings({ booksPin: null, riderPayLocked: false }, 'PIN removed'); renderSettings(root); } }) }, 'Remove PIN') : null,
+    s.booksPin ? h('button', { class: 'btn', onclick: () => { lockNow(); toast('Locked'); } }, '🔒 Lock now') : null));
+  pinCard.append(h('div', { class: 'field', style: { marginTop: '.8rem' } }, h('span', { class: 'label' }, 'Rider pay (incentives & advances)'),
+    choice({ label: 'Rider pay lock', value: s.riderPayLocked ? 'locked' : 'open', options: [{ value: 'open', label: '👁 Visible to everyone' }, { value: 'locked', label: '🔒 Needs the PIN' }], onChange: (v) => { if (!v) return; if (v === 'locked' && !S.state.settings.booksPin) { toast('Set a PIN first.', { kind: 'error' }); renderSettings(root); return; } saveSettings({ riderPayLocked: v === 'locked' }); } }).el));
   stack.append(pinCard);
 
   /* -------- backup */
@@ -91,18 +127,18 @@ export function renderMore(root, { lockBooks }) {
 }
 
 /* ------------------------------------------------------------ list editors */
-function listCard(title, hint, items, _f, fmt, onSave, onAdd) {
+function listCard(title, hint, items, fmt, onSave, onAdd) {
   const card = h('div', { class: 'card' }, h('h2', null, title), h('p', { class: 'hint' }, hint));
   card.append(items.length ? h('div', { class: 'list' }, items.map((x, i) => h('div', { class: 'item' }, h('span', null, fmt(x)), h('button', { class: 'btn small', onclick: () => onSave(items.filter((_, j) => j !== i)) }, 'Remove')))) : h('p', { class: 'muted' }, 'None yet.'));
   card.append(h('div', { style: { marginTop: '.6rem' } }, h('button', { class: 'btn small', onclick: onAdd }, '＋ Add')));
   return card;
 }
-function addSpecial(s) {
-  const name = h('input', { type: 'text', maxLength: 40, placeholder: 'Name, e.g. Buy 5 get 1' });
-  const qty = stepper({ value: 6, min: 1, max: 99, size: 'sm', label: 'Containers' });
+function addSpecial() {
+  const name = h('input', { type: 'text', maxLength: 40, placeholder: 'Name, e.g. Buy 10 get 1' });
+  const qty = stepper({ value: 11, min: 1, max: 99, size: 'sm', label: 'Containers' });
   const total = h('input', { type: 'text', inputMode: 'decimal', placeholder: 'Total price (₱)' });
   openModal({ title: 'New special deal', body: h('div', null, field('Name', name), h('div', { class: 'field' }, h('span', { class: 'label' }, 'Containers you get'), qty.el), field('Total price (₱)', total)),
-    actions: [{ label: 'Cancel' }, { label: 'Add', kind: 'primary', onClick: async ({ setError }) => { const t = toCentavos(total.value); if (!name.value.trim() || Number.isNaN(t) || t <= 0) { setError('Enter a name and a price.'); return false; } await saveSettings({ specials: [...S.state.settings.specials, { key: slug(name.value), name: name.value.trim(), qty: qty.get(), total: t }] }); } }] });
+    actions: [{ label: 'Cancel' }, { label: 'Add', kind: 'primary', onClick: async ({ setError }) => { const t = toCentavos(total.value); if (!name.value.trim() || Number.isNaN(t) || t <= 0) { setError('Enter a name and a price.'); return false; } await saveSettings({ specials: [...S.state.settings.specials, { key: slug(name.value), name: name.value.trim(), containers: qty.get(), total: t }] }); } }] });
 }
 function namedListCard(title, items, field_, withActive = false) {
   const card = h('div', { class: 'card' }, h('h2', null, title));
@@ -113,12 +149,12 @@ function namedListCard(title, items, field_, withActive = false) {
   })));
   const add = h('input', { type: 'text', maxLength: 40, placeholder: 'Add new…', 'aria-label': `Add to ${title}` });
   card.append(h('div', { class: 'row', style: { marginTop: '.6rem' } }, add, h('button', { class: 'btn small', onclick: async () => { const v = add.value.trim(); if (!v) return; await saveSettings({ [field_]: [...S.state.settings[field_], withActive ? { key: slug(v), name: v, active: true } : { key: slug(v), name: v }] }); add.value = ''; } }, 'Add')));
-  if (withActive) card.append(h('p', { class: 'hint' }, 'Riders are never deleted – set them Inactive so old orders keep their name.'));
+  if (withActive) card.append(h('p', { class: 'hint' }, 'People are never deleted – set them Inactive so old orders keep their name.'));
   return card;
 }
 
 /* --------------------------------------------------------------------- pin */
-function setPin() {
+function setPin(root) {
   const a = h('input', { type: 'password', inputMode: 'numeric', maxLength: 8, placeholder: 'New PIN (4–8 digits)', autocomplete: 'off' });
   const b = h('input', { type: 'password', inputMode: 'numeric', maxLength: 8, placeholder: 'Type it again', autocomplete: 'off' });
   openModal({ title: 'Set Books PIN', body: h('div', null, field('PIN', a), field('Confirm', b)), actions: [{ label: 'Cancel' }, { label: 'Save PIN', kind: 'primary', onClick: async ({ setError }) => {
@@ -126,6 +162,7 @@ function setPin() {
     if (a.value !== b.value) { setError('The two PINs are different.'); return false; }
     const salt = newSalt();
     await saveSettings({ booksPin: { salt, hash: await hashPin(a.value, salt) } }, 'PIN saved');
+    renderSettings(root);
   } }] });
 }
 

@@ -1,17 +1,18 @@
-// Books: Overview (P&L), Sales, Expenses. Insights lives in insights.js.
+// Books: Day book (finalized notebook pages), Overview (profit & loss). Insights lives in insights.js.
 import { h, clear } from './dom.js';
 import { toast, choice, field, barChart, shareBars, emptyState, badge, openModal, confirmModal } from './components.js';
 import * as S from '../data/store.js';
 import * as O from '../core/orders.js';
 import * as R from '../core/reports.js';
 import * as X from '../core/exchange.js';
-import * as A from './actions.js';
+import { orderTable } from './orderTable.js';
+import { typeTags, staffName } from './view.js';
 import { newExpenseId } from '../core/ids.js';
 import { peso, toCentavos } from '../core/money.js';
 import { dateKey, addDays, addMonths, prettyDate, prettyTime, shortDate, monthName, dayName } from '../core/dates.js';
 import { deliverFile } from './files.js';
 
-let tab = 'overview', period = 'month', anchor = null, salesDay = null, showVoided = false;
+let tab = 'daybook', period = 'month', anchor = null, bookMonth = null, openDay = null;
 const orders = () => [...S.state.orders.values()];
 const expenses = () => [...S.state.expenses.values()];
 
@@ -73,54 +74,58 @@ export function renderOverview(root) {
 }
 const kpi = (k, v) => h('div', { class: 'kpi' }, h('div', { class: 'k' }, k), h('div', { class: 'v num' }, v));
 
-/* ------------------------------------------------------------------- sales */
-export function renderSales(root) {
+
+/* ---------------------------------------------------------------- day book */
+const monthLabel = (k) => `${monthName(Number(k.slice(5)) - 1)} ${k.slice(0, 4)}`;
+export const openBookPage = (d) => { openDay = d; tab = 'daybook'; };
+
+export function renderDayBook(root) {
   clear(root);
   const s = S.state.settings, tz = s.timezone;
-  if (!salesDay) salesDay = S.today();
-  const dateIn = h('input', { type: 'date', value: salesDay, 'aria-label': 'Day', onchange: (e) => { if (e.target.value) { salesDay = e.target.value; renderSales(clear(root)); } } });
-  root.append(h('div', { class: 'row between' }, h('div', { class: 'row' }, h('button', { class: 'btn small', onclick: () => { salesDay = addDays(salesDay, -1); renderSales(clear(root)); } }, '◀'), dateIn, h('button', { class: 'btn small', onclick: () => { salesDay = addDays(salesDay, 1); renderSales(clear(root)); } }, '▶')),
-    h('button', { class: `chip ${showVoided ? 'on' : ''}`, onclick: () => { showVoided = !showVoided; renderSales(clear(root)); } }, 'Show voided / cancelled')));
-  const dayOrders = orders().filter((o) => O.isPaid(o) && dateKey(o.paid_at, tz) === salesDay).sort((a, b) => new Date(b.paid_at) - new Date(a.paid_at));
-  const extra = showVoided ? orders().filter((o) => (o.voided_at || o.status === 'cancelled') && dateKey(o.updated_at, tz) === salesDay) : [];
-  const total = dayOrders.reduce((a, o) => a + o.total_price, 0);
-  root.append(h('div', { class: 'card', style: { marginTop: '.9rem' } },
-    h('div', { class: 'row between' }, h('h2', null, `${dayOrders.length} sale${dayOrders.length === 1 ? '' : 's'}`), h('strong', { class: 'num', style: { fontSize: '1.4rem' } }, peso(total))),
-    dayOrders.length || extra.length ? h('div', { class: 'list' }, [...dayOrders, ...extra].map((o) => h('div', { class: 'item', style: o.voided_at || o.status === 'cancelled' ? { opacity: .6 } : null },
-      h('div', null, h('div', { class: 't' }, `${o.customer_name}`), h('div', { class: 's' }, `${o.order_no ? '#' + o.order_no + ' · ' : ''}${o.paid_at ? prettyTime(o.paid_at, tz) : ''} · ${o.quantity} × · ${O.METHOD_LABEL[o.payment_method || 'cash'] || ''}${o.edits?.length ? ' · edited' : ''}`)),
-      h('div', { class: 'row' }, o.voided_at ? badge('voided', 'voided') : o.status === 'cancelled' ? badge('cancelled', 'cancelled') : null, h('strong', { class: 'num' }, peso(o.total_price)), h('button', { class: 'btn small', 'aria-label': 'Order actions', onclick: () => A.openOrderMenu(o) }, '⋯'))))) : emptyState('No sales on this day'),
-    h('div', { style: { marginTop: '.8rem' } }, h('button', { class: 'btn small', onclick: async () => { const csv = X.salesCsv(dayOrders, s); const r = await deliverFile(`sales_${salesDay}.csv`, csv, 'text/csv'); if (r !== 'cancelled') toast('Spreadsheet file ready'); } }, '⬇️ Download as spreadsheet (CSV)'))));
+  if (openDay) return renderPage(root, openDay);
+  if (!bookMonth) bookMonth = S.today().slice(0, 7);
+  const shiftM = (n) => { bookMonth = addMonths(`${bookMonth}-01`, n).slice(0, 7); renderDayBook(root); };
+  const list = R.dayList(orders(), expenses(), [...S.state.closes.values()], tz, bookMonth);
+  root.append(h('div', { class: 'row between', style: { marginBottom: '.7rem' } }, h('div', { class: 'row' }, h('button', { class: 'btn small', onclick: () => shiftM(-1) }, '◀'), h('strong', null, monthLabel(bookMonth)), h('button', { class: 'btn small', onclick: () => shiftM(1) }, '▶')),
+    h('p', { class: 'hint' }, 'Each row is one notebook page. Tap a page to open it.')));
+  if (!list.length) { root.append(emptyState('No pages this month', 'Pages appear here once orders are taken.')); return; }
+  const tot = list.reduce((a, d) => ({ sales: a.sales + d.salesTaken, col: a.col + d.collected, cost: a.cost + d.costs, n: a.n + d.orders }), { sales: 0, col: 0, cost: 0, n: 0 });
+  root.append(h('div', { class: 'table-wrap book' }, h('table', { class: 'ledger' },
+    h('thead', null, h('tr', null, h('th', null, 'Page'), h('th', { class: 'r wide' }, 'Orders'), h('th', { class: 'r' }, 'Sales taken'), h('th', { class: 'r wide' }, 'Collected'), h('th', { class: 'r wide' }, 'Expenses'), h('th', null, 'Day closed'))),
+    h('tbody', null, list.map((d) => h('tr', { class: 'orow', tabIndex: 0, onclick: () => { openDay = d.day; renderDayBook(root); window.scrollTo(0, 0); }, onkeydown: (e) => { if (e.key === 'Enter') { openDay = d.day; renderDayBook(root); } } },
+      h('td', null, h('strong', null, shortDate(d.day)), h('div', { class: 'muted small' }, dayName(d.day))), h('td', { class: 'r wide num' }, String(d.orders)), h('td', { class: 'r num' }, peso(d.salesTaken)), h('td', { class: 'r wide num' }, peso(d.collected)), h('td', { class: 'r wide num' }, peso(d.costs)),
+      h('td', null, d.closed ? h('span', { class: `tag ${d.variance === 0 ? 'ok' : 'warn'}` }, d.variance === 0 ? '✔ balanced' : `${d.variance > 0 ? 'over' : 'short'} ${peso(Math.abs(d.variance))}`) : h('span', { class: 'muted' }, 'not closed'), d.changed ? h('div', { class: 'tag warn' }, `⚠ ${d.changed} change(s)`) : null)))),
+    h('tfoot', null, h('tr', null, h('td', null, h('strong', null, 'Month')), h('td', { class: 'r wide num' }, String(tot.n)), h('td', { class: 'r num' }, h('strong', null, peso(tot.sales))), h('td', { class: 'r wide num' }, peso(tot.col)), h('td', { class: 'r wide num' }, peso(tot.cost)), h('td', null))))));
 }
 
-/* ---------------------------------------------------------------- expenses */
-export function renderExpenses(root) {
-  clear(root);
-  const s = S.state.settings;
-  const today = S.today();
-  const month = (anchor || today).slice(0, 7);
-  const date = h('input', { type: 'date', value: today, max: addDays(today, 1), 'aria-label': 'Date' });
-  const amount = h('input', { type: 'text', inputMode: 'decimal', placeholder: '0', 'aria-label': 'Amount' });
-  const note = h('input', { type: 'text', maxLength: 200, placeholder: 'Note (optional)' });
-  const cat = choice({ label: 'Category', value: s.expenseCategories[0]?.key, options: s.expenseCategories.map((c) => ({ value: c.key, label: c.name })) });
-  const from = choice({ label: 'Paid from', value: 'owner', options: [{ value: 'drawer', label: '💵 Cash drawer' }, { value: 'owner', label: '👤 Owner / other' }] });
-  const err = h('p', { class: 'form-error', role: 'alert' });
-  const add = h('button', { class: 'btn primary block', onclick: async () => {
-    err.textContent = '';
-    const c = toCentavos(amount.value);
-    if (!amount.value.trim() || Number.isNaN(c) || c <= 0) { err.textContent = 'Enter the amount spent.'; return; }
-    if (!date.value) { err.textContent = 'Choose the date.'; return; }
-    const now = new Date().toISOString();
-    try {
-      await S.save({ expenses: [{ expense_id: newExpenseId(s.deviceCode), date: date.value, amount: c, category: cat.get() || 'other', note: note.value.trim(), paid_from: from.get() || 'owner', created_at: now, updated_at: now, voided_at: null }] });
-      amount.value = ''; note.value = ''; toast('Expense saved', { kind: 'ok' });
-    } catch (e) { err.textContent = e.message; }
-  } }, 'Add expense');
-  root.append(h('div', { class: 'card' }, h('h2', null, 'Add an expense'), field('Amount (₱)', amount), h('div', { class: 'field' }, h('span', { class: 'label' }, 'What for?'), cat.el), h('div', { class: 'field' }, h('span', { class: 'label' }, 'Paid from'), from.el, h('p', { class: 'hint' }, 'Pick “Cash drawer” if the money came out of the till today – it changes the expected cash at End Day.')), field('Date', date), field('Note', note), err, h('div', { style: { marginTop: '.8rem' } }, add)));
-
-  const list = expenses().filter((e) => !e.voided_at && e.date.slice(0, 7) === month).sort((a, b) => b.date.localeCompare(a.date) || b.created_at.localeCompare(a.created_at));
+/** One finalized notebook page: the orders, the expenses, the totals and the cash count. */
+function renderPage(root, day) {
+  const s = S.state.settings, tz = s.timezone;
+  const t = R.dayTotals(orders(), expenses(), [...S.state.closes.values()], tz, day);
   const cats = new Map(s.expenseCategories.map((c) => [c.key, c.name]));
-  const card = h('div', { class: 'card', style: { marginTop: '.9rem' } }, h('div', { class: 'row between' }, h('h2', null, `This month: ${peso(list.reduce((a, e) => a + e.amount, 0))}`), h('button', { class: 'btn small', onclick: async () => { await deliverFile(`expenses_${month}.csv`, X.expensesCsv(list, s), 'text/csv'); } }, '⬇️ CSV')));
-  card.append(list.length ? h('div', { class: 'list' }, list.map((e) => h('div', { class: 'item' }, h('div', null, h('div', { class: 't' }, cats.get(e.category) || e.category), h('div', { class: 's' }, `${shortDate(e.date)}${e.paid_from === 'drawer' ? ' · from drawer' : ''}${e.note ? ' · ' + e.note : ''}`)),
-    h('div', { class: 'row' }, h('strong', { class: 'num' }, peso(e.amount)), h('button', { class: 'btn small', 'aria-label': 'Remove expense', onclick: () => confirmModal({ title: 'Remove this expense?', message: `${cats.get(e.category) || e.category} · ${peso(e.amount)}`, okLabel: 'Remove', kind: 'danger', onConfirm: async () => { await S.save({ expenses: [{ ...e, voided_at: new Date().toISOString(), updated_at: new Date().toISOString() }] }); toast('Removed'); } }) }, '🗑️'))))) : emptyState('No expenses this month'));
-  root.append(card);
+  root.append(h('div', { class: 'row between noprint', style: { marginBottom: '.7rem' } }, h('button', { class: 'btn', onclick: () => { openDay = null; renderDayBook(root); } }, '← All pages'),
+    h('div', { class: 'row' }, h('button', { class: 'btn small', onclick: () => { openDay = addDays(day, -1); renderDayBook(root); } }, '◀ Earlier'), h('button', { class: 'btn small', onclick: () => { openDay = addDays(day, 1); renderDayBook(root); } }, 'Later ▶'), h('button', { class: 'btn', onclick: () => window.print() }, '🖨 Print'))));
+  root.append(h('div', { class: 'page-title' }, h('h1', null, `${s.stationName} · ${prettyDate(day)}`), t.close ? badge('Day closed', 'good') : badge('Not closed yet', 'warn')));
+  if (t.changedAfterClose.length) root.append(h('div', { class: 'insight warn' }, h('div', { class: 't' }, `${t.changedAfterClose.length} order(s) were changed after this day was closed.`)));
+  root.append(t.rows.length ? orderTable(t.rows, { interactive: false }) : emptyState('No orders were taken on this day', ''));
+  const ex = t.expenses;
+  if (ex.length) root.append(h('div', { class: 'section-h' }, h('span', null, 'Expenses & pay'), badge(String(ex.length))), h('div', { class: 'table-wrap book' }, h('table', { class: 'ledger' },
+    h('tbody', null, ex.map((e, i) => h('tr', null, h('td', { class: 'c-n' }, String(i + 1)), h('td', { class: 'c-cust' }, (e.kind && e.kind !== 'expense' ? `${staffName(e.staff)} · ${e.kind.replace(/_/g, ' ')}` : cats.get(e.category) || e.category) + (e.note ? ` – ${e.note}` : '')), h('td', { class: 'wide' }, e.paid_from === 'drawer' ? 'drawer' : 'owner'), h('td', { class: 'r c-amt num' }, peso(e.amount))))))));
+  const line = (k, v) => h('div', { class: 'item' }, h('span', null, k), h('strong', { class: 'num' }, v));
+  root.append(h('div', { class: 'grid two', style: { marginTop: '.9rem' } },
+    h('div', { class: 'card' }, h('h2', null, 'Totals'), h('div', { class: 'list' }, line('Containers', String(t.containers)), h('div', { class: 'item' }, h('span', null, 'By type'), typeTags(t.byType)), line('Sales taken', peso(t.salesTaken)), line('Collected (cash)', peso(t.collected.cash)),
+      t.collected.gcash + t.collected.other ? line('Collected (GCash / other)', peso(t.collected.gcash + t.collected.other)) : null, line('Expenses', peso(t.costTotal)), t.incentivesPaid ? line('…of which incentives', peso(t.incentivesPaid)) : null, t.advancesGiven ? line('Advances given (not an expense)', peso(t.advancesGiven)) : null,
+      line('Net for the day', peso(t.net)), line('Still unpaid from this page', peso(t.unpaid)), line('Empties still out', String(t.emptiesOutTotal)))),
+    h('div', { class: 'card' }, h('h2', null, 'Cash count'), t.close ? h('div', { class: 'list' }, line('Opening cash', peso(t.close.opening_float)), line('Expected', peso(t.close.expected_cash)), line('Counted', peso(t.close.counted_cash)), line('Difference', t.close.variance === 0 ? 'Balanced ✅' : `${t.close.variance > 0 ? 'Over' : 'Short'} ${peso(Math.abs(t.close.variance))}`), line('Left for next day', peso(t.close.float_next)), t.close.note ? line('Note', t.close.note) : null) : h('p', { class: 'muted' }, 'This day has not been closed. Use End Day in the Orders tab.'))));
+}
+
+/* ---------------------------------------------------------------- shell */
+export function renderBooks(root, { renderInsights }) {
+  clear(root);
+  const tabs = [['daybook', '📖 Day book'], ['overview', '📊 Overview'], ['insights', '💡 Insights']];
+  const bar = choice({ label: 'Books section', value: tab, options: tabs.map(([value, label]) => ({ value, label })), onChange: (v) => { if (v) { tab = v; if (v !== 'daybook') openDay = null; renderBooks(root, { renderInsights }); } } });
+  bar.el.classList.add('book-tabs');
+  const body = h('div', { style: { marginTop: '.9rem' } });
+  root.append(h('div', { class: 'page-title' }, h('h1', null, 'Books')), bar.el, body);
+  ({ daybook: renderDayBook, overview: renderOverview, insights: renderInsights }[tab] || renderDayBook)(body);
 }
