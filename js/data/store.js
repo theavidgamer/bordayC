@@ -4,7 +4,7 @@ import * as db from './db.js';
 import { dateKey } from '../core/dates.js';
 import { sanitizeDeviceCode } from '../core/ids.js';
 
-export const APP_VERSION = '4.1.0';
+export const APP_VERSION = '4.3.0';
 
 export const DEFAULT_SETTINGS = Object.freeze({
   stationName: 'Water Station',
@@ -24,6 +24,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
     { key: 'refill_source', name: 'Water / refill source' }, { key: 'supplies', name: 'Supplies & food' }, { key: 'load', name: 'Load / phone' },
     { key: 'electricity', name: 'Electricity' }, { key: 'fuel', name: 'Fuel / transport' }, { key: 'repairs', name: 'Repairs' }, { key: 'other', name: 'Other' }
   ],
+  stationLat: null, stationLng: null, // where the station is (set on the map in Settings)
+  speedKmh: 20, detour: 1.4,         // for travel-time estimates: average speed, and road distance ÷ straight-line distance
   dailyGoal: 0,
   acceptOtherPayments: false,
   openingFloat: 0,

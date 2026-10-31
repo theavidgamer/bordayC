@@ -9,6 +9,9 @@ import { newSalt, hashPin } from '../core/pin.js';
 import { sanitizeDeviceCode } from '../core/ids.js';
 import { peso, toCentavos, pesoInput } from '../core/money.js';
 import { lockNow } from './lock.js';
+import { openPinPicker, stationPoint } from './map.js';
+import { openRoadEditor } from './roadedit.js';
+import { fmtKm } from '../core/geo.js';
 import { deliverFile, readTextFile, isDiscordWebhook, postToDiscord } from './files.js';
 
 const slug = (name) => `${String(name).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 24) || 'item'}_${Math.random().toString(36).slice(2, 6)}`;
@@ -60,6 +63,18 @@ export function renderSettings(root) {
       for (const [, a, b] of rows) if (t[b.key] < t[a.key]) return bad('“Red” must be later than “Amber”.');
       await saveSettings({ timers: t }, 'Timers saved');
     } }, 'Save timers'))));
+
+  /* -------- map */
+  const sp = stationPoint();
+  const speed = stepper({ value: s.speedKmh || 20, min: 5, max: 80, size: 'sm', label: 'Average speed km/h' });
+  const detour = choice({ label: 'Roads', value: String(s.detour || 1.4), options: [{ value: '1.2', label: 'Straight' }, { value: '1.4', label: 'Normal' }, { value: '1.7', label: 'Winding' }] });
+  stack.append(h('div', { class: 'card' }, h('h2', null, '🗺 Map'), h('p', { class: 'hint' }, 'Deliveries are measured from the station along the roads in the app’s map (works offline). Where a road is missing, draw it below.'),
+    h('p', null, sp ? `📍 Station saved (${sp.lat.toFixed(4)}, ${sp.lng.toFixed(4)})` : '⚠️ Station location not set yet.'),
+    h('button', { class: 'btn', onclick: () => openPinPicker({ title: 'Where is the station?', start: sp, onSave: async (lat, lng) => { await saveSettings({ stationLat: lat, stationLng: lng }, 'Station location saved'); } }) }, sp ? 'Move the station pin' : '📍 Set the station location'),
+    h('button', { class: 'btn', style: { marginLeft: '.5rem' }, onclick: openRoadEditor }, '✏️ Draw a missing road'),
+    h('div', { class: 'field', style: { marginTop: '.8rem' } }, h('span', { class: 'label' }, 'Average riding / driving speed (km/h)'), speed.el),
+    h('div', { class: 'field' }, h('span', { class: 'label' }, 'Off-road leftovers (where no road is mapped): how winding?'), detour.el),
+    h('div', { style: { marginTop: '.8rem' } }, h('button', { class: 'btn primary', onclick: () => saveSettings({ speedKmh: speed.get(), detour: Number(detour.get() || 1.4) }, 'Map settings saved') }, 'Save map settings'))));
 
   /* -------- containers + categories */
   stack.append(namedListCard('🫙 Container types', s.containerTypes, 'containerTypes'));
@@ -187,7 +202,7 @@ function setPin(root) {
 /* ------------------------------------------------------------------ backup */
 async function downloadBackup() {
   const now = new Date().toISOString();
-  const file = X.buildBackup({ settings: S.state.settings, orders: [...S.state.orders.values()], expenses: [...S.state.expenses.values()], customers: [...S.state.customers.values()], closes: [...S.state.closes.values()], meta: { floatNext: S.state.meta.floatNext ?? null, lastExportAt: S.state.meta.lastExportAt ?? null, lastCloseDate: S.state.meta.lastCloseDate ?? null }, now, appVersion: S.APP_VERSION });
+  const file = X.buildBackup({ settings: S.state.settings, orders: [...S.state.orders.values()], expenses: [...S.state.expenses.values()], customers: [...S.state.customers.values()], closes: [...S.state.closes.values()], meta: { customRoads: S.state.meta.customRoads ?? [], floatNext: S.state.meta.floatNext ?? null, lastExportAt: S.state.meta.lastExportAt ?? null, lastCloseDate: S.state.meta.lastCloseDate ?? null }, now, appVersion: S.APP_VERSION });
   const r = await deliverFile(`ledger_backup_${now.slice(0, 10)}.json`, JSON.stringify(file));
   if (r === 'cancelled') return;
   await S.save({ meta: { lastBackupAt: now } });

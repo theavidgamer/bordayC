@@ -1,9 +1,10 @@
 // The build script fills in the cache name and the file list automatically on every build,
 // so you never bump a version by hand: new build = new cache = phones update.
-const CACHE = 'ledger-3ffb5f4800';
+const CACHE = 'ledger-113aca5349';
 const FILES = [
   "./",
   "./app.css",
+  "./data/roads.json",
   "./icons/apple-touch-icon.png",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
@@ -12,11 +13,13 @@ const FILES = [
   "./js/core/analytics.js",
   "./js/core/dates.js",
   "./js/core/exchange.js",
+  "./js/core/geo.js",
   "./js/core/ids.js",
   "./js/core/money.js",
   "./js/core/orders.js",
   "./js/core/pin.js",
   "./js/core/reports.js",
+  "./js/core/roadnet.js",
   "./js/core/timers.js",
   "./js/data/db.js",
   "./js/data/store.js",
@@ -34,8 +37,13 @@ const FILES = [
   "./js/ui/insights.js",
   "./js/ui/lines.js",
   "./js/ui/lock.js",
+  "./js/ui/map.js",
   "./js/ui/orderTable.js",
   "./js/ui/orders.js",
+  "./js/ui/place.js",
+  "./js/ui/roadedit.js",
+  "./js/ui/roads.js",
+  "./js/ui/route.js",
   "./js/ui/settings.js",
   "./js/ui/view.js",
   "./manifest.json"

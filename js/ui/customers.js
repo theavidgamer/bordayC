@@ -12,6 +12,8 @@ import { orderTable } from './orderTable.js';
 import { typeTags } from './view.js';
 import { hooks } from './bus.js';
 import { prefillCounter } from './counter.js';
+import { locationCard, fromStation, distanceText, pinOf } from './place.js';
+import { googleMapsUrl } from '../core/geo.js';
 
 let profileId = null, q = '';
 export const setProfile = (id) => { profileId = id; };
@@ -47,13 +49,15 @@ export function openCustomerQuick(name, id) {
   const line = (k, v) => h('div', { class: 'item' }, h('span', null, k), h('strong', null, v));
   const body = h('div', { class: 'stack' },
     h('div', { class: 'list' },
-      c.phone ? line('📞 Phone', c.phone) : null, c.address ? line('📍 Address', c.address) : null,
+      c.phone ? line('📞 Phone', c.phone) : null, c.address ? line('🏠 Address', c.address) : null,
+      fromStation(c) ? line('📍 From the station', distanceText(fromStation(c))) : (pinOf(c) ? line('📍 Location', 'Pinned') : null),
       line('Orders', `${st.orders} · quantity ${st.containers}`), line('Last order', st.last ? `${prettyDate(st.last)} (${st.sinceLast === 0 ? 'today' : st.sinceLast + ' d ago'})` : '—'),
       line('Owes money', st.owedAmount ? peso(st.owedAmount) : 'No'), line('Containers out', st.outTotal ? String(st.outTotal) : 'None')),
     st.outTotal ? h('div', null, typeTags(st.out)) : null, c.note ? h('p', { class: 'hint' }, `📝 ${c.note}`) : null);
   const m = openModal({
     title: c.name, body, actions: [
       { label: '＋ New order', kind: 'primary', onClick: () => { prefillCounter(c); hooks.goTo('counter'); } },
+      ...(pinOf(c) ? [{ label: '🧭 Map', onClick: () => { window.open(googleMapsUrl(pinOf(c)), '_blank', 'noopener'); return false; } }] : []),
       { label: 'Full profile →', onClick: () => { profileId = c.customer_id; hooks.goTo('customers'); } }
     ]
   });
@@ -107,7 +111,7 @@ export function renderCustomers(root) {
       .sort((a, b) => (b.st.last || '').localeCompare(a.st.last || '') || a.c.name.localeCompare(b.c.name));
     if (!list.length) { host.append(emptyState(all.length ? 'Nobody matches' : 'No customers yet', all.length ? '' : 'Customers are added automatically when you type a name on a new order.')); return; }
     const body = h('tbody', null, list.map(({ c, st }) => h('tr', { class: 'orow', tabIndex: 0, onclick: () => { profileId = c.customer_id; renderCustomers(root); window.scrollTo(0, 0); }, onkeydown: (e) => { if (e.key === 'Enter') { profileId = c.customer_id; renderCustomers(root); } } },
-      h('td', { class: 'c-cust' }, h('strong', null, c.name), h('div', { class: 'muted small' }, [c.phone, c.address].filter(Boolean).join(' · ') || '')),
+      h('td', { class: 'c-cust' }, h('strong', null, c.name, pinOf(c) ? ' 📍' : ''), h('div', { class: 'muted small' }, [c.phone, c.address].filter(Boolean).join(' · ') || '')),
       h('td', { class: 'wide' }, `${st.orders} order${st.orders === 1 ? '' : 's'}`), h('td', { class: 'wide' }, st.last ? (st.sinceLast === 0 ? 'today' : `${st.sinceLast} d ago`) : '—'),
       h('td', null, st.owedAmount ? h('span', { class: 'tag warn' }, `Owes ${peso(st.owedAmount)}`) : h('span', { class: 'muted' }, '–')),
       h('td', null, st.outTotal ? h('span', { class: 'tag warn' }, `⚠ ${st.outTotal} containers`) : h('span', { class: 'muted' }, '–')))));
@@ -124,7 +128,8 @@ function renderProfile(root, c) {
     h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => { prefillCounter(c); hooks.goTo('counter'); } }, '＋ New order'), h('button', { class: 'btn', onclick: () => openEditModal(c, () => renderCustomers(root)) }, '✏️ Edit'))));
   root.append(h('div', { class: 'card' }, h('div', { class: 'foot-grid' },
     h('div', null, h('div', { class: 'k' }, 'Phone'), h('div', null, c.phone || '—')), h('div', null, h('div', { class: 'k' }, 'Address'), h('div', null, c.address || '—')), h('div', null, h('div', { class: 'k' }, 'Note'), h('div', null, c.note || '—'))),
-    h('p', { class: 'hint' }, 'Map pin and distance will be added later.')));
+    ));
+  root.append(locationCard(c, () => renderCustomers(root)));
   const kpi = (k, v, sub) => h('div', { class: 'kpi' }, h('div', { class: 'k' }, k), h('div', { class: 'v num' }, v), sub ? h('div', { class: 'hint' }, sub) : null);
   root.append(h('div', { class: 'kpis stats', style: { marginTop: '.8rem' } },
     kpi('Orders', String(st.orders), `quantity ${st.containers}`), kpi('Total paid', peso(st.spent)), kpi('Money owed', peso(st.owedAmount), st.owedCount ? `${st.owedCount} order(s)` : ''), kpi('Containers out', String(st.outTotal)),

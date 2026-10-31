@@ -12,6 +12,7 @@ import { typeTags } from './view.js';
 import { hooks } from './bus.js';
 import { openEndDay } from './endday.js';
 import { deliverFile } from './files.js';
+import { openRoute } from './route.js';
 
 let day = null, filter = 'all', q = '';
 export const setOrdersDay = (d) => { day = d; };
@@ -38,7 +39,7 @@ export function renderOrders(root) {
   root.append(h('div', { class: 'row between', style: { marginBottom: '.7rem' } },
     h('div', { class: 'row' }, h('button', { class: 'btn small', onclick: () => go(addDays(day, -1)), 'aria-label': 'Previous day' }, '◀ Back'), dateInput, h('button', { class: 'btn small', onclick: () => go(addDays(day, 1)), 'aria-label': 'Next day' }, 'Next ▶'),
       !isToday ? h('button', { class: 'btn small soft', onclick: () => go(today) }, 'Today') : null),
-    h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => hooks.goTo('counter') }, '＋ New order'), h('button', { class: 'btn', onclick: () => window.print() }, '🖨 Print'))));
+    h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => hooks.goTo('counter') }, '＋ New order'), h('button', { class: 'btn', onclick: openRoute }, '🗺 Route'), h('button', { class: 'btn', onclick: () => window.print() }, '🖨 Print'))));
 
   /* stats strip */
   const owed = R.receivables(all, today, tz);

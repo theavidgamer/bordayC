@@ -245,3 +245,27 @@ input[type=date] { width: auto; min-width: 10.5rem; max-width: 100%; }
 .price-choice, .type-choice { display: flex; flex-wrap: wrap; gap: .5rem; }
 .price-choice .chip, .type-choice .chip { flex: 1 1 auto; }
 .deal-chip { font-size: 1.05rem; }
+
+/* ============================================================ map */
+.slippy { position: relative; overflow: hidden; border-radius: 14px; border: 1px solid var(--line); background: #dfe9ec; touch-action: none; cursor: grab; user-select: none; }
+.slippy .world { position: absolute; inset: 0; }
+.slippy .tile { position: absolute; width: 256px; height: 256px; max-width: none; pointer-events: none; }
+.slippy .route-line { position: absolute; left: 0; top: 0; pointer-events: none; }
+.slippy .route-line polyline { stroke: var(--brand); stroke-width: 4; stroke-opacity: .85; stroke-dasharray: 8 6; }
+.slippy .pin { position: absolute; transform: translate(-50%, -100%); min-width: 34px; height: 34px; padding: 0 .35rem; border-radius: 17px 17px 17px 4px; border: 3px solid #fff; background: var(--brand); color: #fff; font-weight: 900; box-shadow: 0 2px 6px rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; font-size: .95rem; }
+.slippy .pin.station { background: #1d5fb8; } .slippy .pin.pick { background: var(--bad); } .slippy .pin.rush { background: var(--bad); }
+.slippy .zoom-box { position: absolute; right: 8px; top: 8px; display: flex; flex-direction: column; gap: 6px; z-index: 5; }
+.slippy .zoom-box .btn { min-height: 44px; min-width: 44px; padding: 0; font-size: 1.3rem; font-weight: 900; }
+.slippy .attrib { position: absolute; left: 0; bottom: 0; background: rgba(255,255,255,.8); color: #333; font-size: .68rem; padding: 1px 6px; z-index: 4; }
+.slippy .map-note { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,.7); color: #fff; padding: .5rem .8rem; border-radius: 10px; font-size: .85rem; z-index: 4; text-align: center; max-width: 80%; }
+.pin-status { font-weight: 800; }
+.route-stop { gap: .7rem; align-items: center; } .route-stop .grow { flex: 1; min-width: 0; }
+.stop-n { flex: 0 0 2.2rem; height: 2.2rem; border-radius: 50%; background: var(--brand); color: #fff; font-weight: 900; display: flex; align-items: center; justify-content: center; }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+.slippy .map-note { top: 10px; transform: translateX(-50%); font-size: .8rem; padding: .35rem .7rem; }
+.slippy .layer { position: absolute; inset: 0; }
+.slippy .roads-canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+.slippy .pic-btn { position: absolute; left: 8px; top: 8px; z-index: 5; min-height: 40px; padding: 0 .7rem; font-size: .85rem; font-weight: 800; }
+.slippy .pic-btn[aria-pressed="true"] { background: var(--brand); color: var(--brand-ink); }
+.slippy { background: #eef2f4; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .slippy { background: #17252b; } }

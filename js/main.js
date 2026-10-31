@@ -10,6 +10,7 @@ import { renderInsights } from './ui/insights.js';
 import { renderSettings } from './ui/settings.js';
 import { unclosedDays, openEndDay } from './ui/endday.js';
 import { hooks } from './ui/bus.js';
+import { loadRoads } from './ui/roads.js';
 import { isUnlocked, hasPin, pinCard, touch } from './ui/lock.js';
 import * as O from './core/orders.js';
 import { prettyDate, shortDate } from './core/dates.js';
@@ -147,6 +148,7 @@ async function boot() {
     render();
   });
   render();
+  loadRoads().then(() => { if (current === 'customers' || current === 'orders') render(); });
   if (!S.state.settings.onboarded) onboarding();
   registerSW();
   setInterval(() => { if (current === 'orders') render(); }, 60000); // keep "35 min ago" fresh
